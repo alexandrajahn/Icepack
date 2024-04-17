@@ -478,7 +478,7 @@
       use icedrv_flux, only: fresh, frain, fpond, frzmlt, frazil, frz_onset
       use icedrv_flux, only: fsalt, Tf, sss, salinz, fhocn, rside, fside, wlat
       use icedrv_flux, only: meltl, frazil_diag, flux_bio, faero_ocn, fiso_ocn, fmp_ocn
-      use icedrv_flux, only: HDO_ocn, H2_16O_ocn, H2_18O_ocn
+      use icedrv_flux, only: HDO_ocn, H2_16O_ocn, H2_18O_ocn, mp_ocn
       use icedrv_init, only: tmask
       use icedrv_state, only: aice, aicen, aice0, trcr_depend
       use icedrv_state, only: aicen_init, vicen_init, trcrn, vicen, vsnon
@@ -547,7 +547,7 @@
                          fhocn=fhocn(i),                              &
                          bgrid=bgrid,      cgrid=cgrid,               &
                          igrid=igrid,      faero_ocn=faero_ocn(i,:),  &
-                         fmp_ocn=fmp_ocn(i,:),                        &
+                         fmp_ocn=fmp_ocn(i,:), mp_ocn=mp_ocn(i,:),    &
                          first_ice=first_ice(i,:),                    &
                          flux_bio=flux_bio(i,1:nbtrcr),               &
                          ocean_bio=ocean_bio(i,1:nbtrcr),             &

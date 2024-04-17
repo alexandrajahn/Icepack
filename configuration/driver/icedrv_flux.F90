@@ -300,7 +300,7 @@
 
       real (kind=dbl_kind), &   ! coupling variable for both tr_mp and tr_zmp
             dimension (nx,icepack_max_mp), public :: &
-            fmp_atm   ! microplastics deposition rate (kg/m^2 s)
+         fmp_atm   ! microplastics deposition rate (kg/m^2 s)
 
       real (kind=dbl_kind), &   ! coupling variable for tr_iso
          dimension (nx,icepack_max_iso), public :: &
@@ -512,7 +512,7 @@
       H2_18O_ocn(:) = c0
 
       ! microplastics concentration in ocean
-      mp_ocn   (:,:) = c0 ! microplastics concentration in the ocean kg/kg
+      mp_ocn   (:,:) = 8.5e-5_dbl_kind ! microplastics concentration in the ocean kg/kg
 
       do i = 1, nx
          Tf (i) = icepack_liquidus_temperature(sss(i)) ! freezing temp (C)

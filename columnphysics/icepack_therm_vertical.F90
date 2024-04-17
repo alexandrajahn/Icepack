@@ -2722,18 +2722,16 @@
             endif
 
             if (tr_mp) then
-               call update_microplastics (dt,                       &
-                                 nilyr, nslyr,                   &
-                                 n_mp,                           &
-                                 melttn     (n), meltsn     (n), &
-                                 meltbn     (n), congeln    (n), &
-                                 snoicen    (n), fsnow,          &
-                                 mpsno  (:,:,n), mpice(:,:,n),   &
-                                 aicen_init (n), vicen_init (n), &
-                                 vsnon_init (n),                 &
-                                 vicen      (n), vsnon      (n), &
-                                 aicen      (n),                 &
-                                 fmp_atm     ,  fmp_ocn, mp_ocn)
+               call update_microplastics (dt, nilyr, nslyr, n_mp,   &
+                                 melttn(n), meltsn(n),            &
+                                 meltbn(n), congeln(n),           &
+                                 snoicen(n), fsnow,               &
+                                 mpsno(:,:,n),  mpice(:,:,n),     &
+                                 aicen_init(n), vicen_init(n),    &
+                                 vsnon_init(n),                   &
+                                 vicen(n), vsnon(n),              &
+                                 aicen(n),                        &
+                                 fmp_atm, fmp_ocn, mp_ocn)
                 if (icepack_warnings_aborted(subname)) return
             endif
 
