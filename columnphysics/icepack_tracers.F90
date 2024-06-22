@@ -790,7 +790,7 @@
               call icepack_warnings_add(subname//'error in nlt_zmp size')
               call icepack_warnings_setabort(.true.,__FILE__,__LINE__)
            else
-              nlt_zaero(1:nsiz) = nlt_zmp_in(1:nsiz)
+              nlt_zmp(1:nsiz) = nlt_zmp_in(1:nsiz)
            endif
         endif
 

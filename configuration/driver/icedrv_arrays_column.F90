@@ -10,7 +10,7 @@
       use icedrv_constants, only: nu_diag
       use icedrv_domain_size, only: nx, ncat, nilyr, nslyr, nfsd, nfreq
       use icedrv_domain_size, only: nblyr, max_nsw , max_ntrcr
-      use icepack_intfc, only: icepack_max_nbtrcr, icepack_max_algae, icepack_max_aero
+      use icepack_intfc, only: icepack_max_nbtrcr, icepack_max_algae, icepack_max_aero, icepack_max_mp
       use icepack_intfc, only: icepack_nmodal1, icepack_nmodal2
       use icepack_intfc, only: icepack_nspint_3bd, icepack_nspint_5bd
       use icepack_intfc, only: icepack_warnings_flush, icepack_warnings_aborted
@@ -175,7 +175,9 @@
                         !                 2*max_algae + max_doc + 7 + max_dic + max_don + 2*max_fe
                         ! zaero(1:max_aero) = 2*max_algae + max_doc + 8 + max_dic + max_don + 2*max_fe :
                         !                     2*max_algae + max_doc + 7 + max_dic + max_don + 2*max_fe + max_aero
-                        ! humic =  2*max_algae + max_doc + 8 + max_dic + max_don + 2*max_fe + max_aero
+                        ! zmp(1:max_mp) = 2*max_algae + max_doc + 8 + max_dic + max_don + 2*max_fe :
+                        !                     2*max_algae + max_doc + 7 + max_dic + max_don + 2*max_fe + max_mp
+                        ! humic =  2*max_algae + max_doc + 8 + max_dic + max_don + 2*max_fe + max_aero + max_mp
 
       integer (kind=int_kind), dimension(nx,icepack_max_algae), public :: &
          algal_peak     ! vertical location of algal maximum, 0 if no maximum

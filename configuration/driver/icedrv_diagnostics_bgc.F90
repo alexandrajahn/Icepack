@@ -37,7 +37,7 @@
 
       use icedrv_arrays_column, only: darcy_V
       use icedrv_diagnostics, only: nx_names
-      use icedrv_domain_size, only: nilyr, n_zmp
+      use icedrv_domain_size, only: nilyr
       use icedrv_state, only: aice, aicen, vicen, vice, trcr, trcrn
 
       ! local variables

@@ -36,7 +36,7 @@
                                   ! *** add to kscavz in icepack_zbgc_shared.F90
         n_bgc     = (n_algae*2 + n_doc + n_dic + n_don + n_fed + n_fep + n_zaero + n_zmp &
                   + 8)        , & ! nit, am, sil, dmspp, dmspd, dms, pon, humic
-        nltrcr    = (n_bgc*TRBGCZ)*TRBRI, & ! number of zbgc (includes zaero)
+        nltrcr    = (n_bgc*TRBGCZ)*TRBRI, & ! number of zbgc (includes zaero and zmp)
         max_nsw   = (nilyr+nslyr+2) & ! total chlorophyll plus aerosols
                   * (1+TRZAERO),& ! number of tracers active in shortwave calculation
         max_ntrcr =   1         & ! 1 = surface temperature

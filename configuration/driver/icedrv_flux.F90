@@ -493,7 +493,7 @@
       fiso_evap    (:,:) = c0        ! isotope evaporation rate (kg/m2/s)
       faero_atm    (:,:) = c0        ! aerosol deposition rate (kg/m2/s)
       fmp_atm      (:,:) = c0        ! microplastics deposition rate (kg/m2/s)
-      flux_bio_atm (:,:) = c0        ! zaero and bio deposition rate (kg/m2/s)
+      flux_bio_atm (:,:) = c0        ! zaero, zmp and bio deposition rate (kg/m2/s)
 
       !-----------------------------------------------------------------
       ! fluxes received from ocean

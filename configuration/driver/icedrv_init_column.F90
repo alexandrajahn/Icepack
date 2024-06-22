@@ -163,7 +163,8 @@
               nt_fbri_out=nt_fbri, nt_tsfc_out=nt_tsfc, &
               nt_rsnw_out=nt_rsnw, &
               nt_bgc_N_out=nt_bgc_N, nt_zaero_out=nt_zaero, &
-              nlt_chl_sw_out=nlt_chl_sw, nlt_zaero_sw_out=nlt_zaero_sw)
+              nlt_chl_sw_out=nlt_chl_sw, nlt_zaero_sw_out=nlt_zaero_sw,&
+              nt_zmp_out=nt_zmp,nlt_zmp_sw_out=nlt_zmp_sw)
          call icepack_warnings_flush(nu_diag)
          if (icepack_warnings_aborted()) call icedrv_system_abort(string=subname, &
              file=__FILE__,line= __LINE__)
@@ -1748,9 +1749,9 @@
             enddo   ! mm
          endif      ! tr_zaero
 
-         ! z layer microplastics !AJ: Is this needed/correct?
+         ! z layer microplastics
          if (tr_zmp) then
-            do mm = 1, n_zaero
+            do mm = 1, n_zmp
                if (dEdd_algae) then
                   nlt_zmp_sw(mm) = nbtrcr_sw + 1
                   nbtrcr_sw = nbtrcr_sw + nilyr + nslyr+2
@@ -1762,6 +1763,8 @@
                                   bgc_tracer_type, trcr_depend,   &
                                   trcr_base,       n_trcr_strata, &
                                   nt_strata,       bio_index)
+               bio_index_o(nlt_zmp(mm)) = 2*icepack_max_algae + icepack_max_doc + icepack_max_dic &
+                           + icepack_max_don + 2*icepack_max_fe + 7 + mm !AJ: is this needed for ZMP tracer?
             enddo   ! mm
          endif      ! tr_zmp
 
@@ -1822,6 +1825,7 @@
            n_algae_in=n_algae,                                                                   &
            n_DOC_in=n_DOC,             n_DON_in=n_DON,               n_DIC_in=n_DIC,             &
            n_fed_in=n_fed,             n_fep_in=n_fep,               n_zaero_in=n_zaero,         &
+           n_zmp_in=n_zmp,                                                                       &
            ntrcr_in=ntrcr, ntrcr_o_in=ntrcr_o, nbtrcr_in=nbtrcr, nbtrcr_sw_in=nbtrcr_sw)
       call icepack_warnings_flush(nu_diag)
       if (icepack_warnings_aborted()) call icedrv_system_abort(string=subname, &
@@ -1845,14 +1849,17 @@
            nt_bgc_N_in=nt_bgc_N,       nt_bgc_chl_in=nt_bgc_chl,     nt_bgc_hum_in=nt_bgc_hum,   &
            nt_bgc_DOC_in=nt_bgc_DOC,   nt_bgc_DON_in=nt_bgc_DON,     nt_bgc_DIC_in=nt_bgc_DIC,   &
            nt_zaero_in=nt_zaero,       nt_bgc_DMSPp_in=nt_bgc_DMSPp, nt_bgc_DMSPd_in=nt_bgc_DMSPd, &
+           nt_zmp_in=nt_zmp,                                                                       &
            nt_bgc_Fed_in=nt_bgc_Fed,   nt_bgc_Fep_in=nt_bgc_Fep,     nt_zbgc_frac_in=nt_zbgc_frac, &
            nlt_chl_sw_in=nlt_chl_sw,   nlt_bgc_Sil_in=nlt_bgc_Sil,   nlt_zaero_sw_in=nlt_zaero_sw, &
+           nlt_zmp_sw_in=nlt_zmp_sw,                                                             &
            nlt_bgc_N_in=nlt_bgc_N,     nlt_bgc_Nit_in=nlt_bgc_Nit,   nlt_bgc_Am_in=nlt_bgc_Am,   &
            nlt_bgc_DMS_in=nlt_bgc_DMS, nlt_bgc_DMSPp_in=nlt_bgc_DMSPp,                           &
            nlt_bgc_DMSPd_in=nlt_bgc_DMSPd,                                                       &
            nlt_bgc_DIC_in=nlt_bgc_DIC, nlt_bgc_DOC_in=nlt_bgc_DOC,   nlt_bgc_PON_in=nlt_bgc_PON, &
            nlt_bgc_DON_in=nlt_bgc_DON, nlt_bgc_Fed_in=nlt_bgc_Fed,   nlt_bgc_Fep_in=nlt_bgc_Fep, &
            nlt_bgc_chl_in=nlt_bgc_chl, nlt_bgc_hum_in=nlt_bgc_hum,   nlt_zaero_in=nlt_zaero,     &
+           nlt_zmp_in=nlt_zmp,                                                                   &
            bio_index_o_in=bio_index_o, bio_index_in=bio_index)
       call icepack_warnings_flush(nu_diag)
       if (icepack_warnings_aborted()) call icedrv_system_abort(string=subname, &
@@ -1929,6 +1936,7 @@
          write(nu_diag,1020) ' number of fep             = ', n_fep
          write(nu_diag,1020) ' number of aerosols        = ', n_zaero
          write(nu_diag,1010) ' tr_zaero                  = ', tr_zaero
+         write(nu_diag,1010) ' number of microplastics   = ', n_zmp
          write(nu_diag,1010) ' tr_zmp                    = ', tr_zmp
          write(nu_diag,1010) ' tr_bgc_Nit                = ', tr_bgc_Nit
          write(nu_diag,1010) ' tr_bgc_N                  = ', tr_bgc_N

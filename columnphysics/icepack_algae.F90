@@ -61,7 +61,7 @@
 
       use icepack_aerosol, only: update_snow_bgc
 
-    !  use icepack_microplastics, only: update_snow_bgc : AJ
+      use icepack_microplastics, only: update_snow_bgc
 
       implicit none
 
@@ -1044,6 +1044,13 @@
       !-----------------------------------------------------------------
       !   Microlastics flux from atmosphere ; To be added AJ
       !-----------------------------------------------------------------
+
+        !fmp_atm(:,1) = c0 ! 1.87e-11_dbl_kind ! kg/m^2 s
+        !fmp_atm(:,2) = c0 ! 1.87e-11_dbl_kind
+        !fmp_atm(:,3) = c0 ! 1.87e-11_dbl_kind
+        !fmp_atm(:,4) = 1.87e-11_dbl_kind
+        !fmp_atm(:,5) = 1.87e-11_dbl_kind
+        !fmp_atm(:,6) = c0 !1.87e-11_dbl_kind
 
 
       !-----------------------------------------------------------------

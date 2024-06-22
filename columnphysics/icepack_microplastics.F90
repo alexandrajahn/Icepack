@@ -125,7 +125,6 @@
          focn_old             ! for conservation check
 
       ! The below assumes max_mp=6, need to expand table for more MPs
-      !AJ: Adjust as we think, for now, make it take up/take out everything =1
       !krelm =   (/ 0.0_dbl_kind, 0.0_dbl_kind, 0.0_dbl_kind, &               !melt water scavenging
       !             0.0_dbl_kind, 0.0_dbl_kind, 0.0_dbl_kind /)
       !krelsi = (/ 0.0_dbl_kind, 0.0_dbl_kind, 0.0_dbl_kind, &               !snow-ice formation scavenging
@@ -190,7 +189,7 @@
     ! basal ice growth
     !-------------------------------------------------------------------
 
-      if (dhi_congel > c0) then    !AJ: IS THIS RIGHT? Adapted from iso but can't really follow what is happening
+      if (dhi_congel > c0) then
          do k = 1,n_mp
             !LLW: uptake factor for basal ice formation, just for internal layer now
             !sloss1 = c0
