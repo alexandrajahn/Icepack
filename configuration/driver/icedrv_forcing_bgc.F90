@@ -174,11 +174,11 @@
       use icedrv_flux, only: fmp_atm
       character(len=*), parameter :: subname='(fmp_default)'
 
-      fmp_atm(:,1) = c0 ! 1.87e-11_dbl_kind ! kg/m^2 s
+      fmp_atm(:,1) = 1.e-12_dbl_kind !1.87e-11_dbl_kind ! kg/m^2 s
       fmp_atm(:,2) = c0 ! 1.87e-11_dbl_kind
       fmp_atm(:,3) = c0 ! 1.87e-11_dbl_kind
-      fmp_atm(:,4) = 1.87e-11_dbl_kind
-      fmp_atm(:,5) = 1.87e-11_dbl_kind
+      fmp_atm(:,4) = c0 !1.87e-11_dbl_kind
+      fmp_atm(:,5) = c0 !1.87e-11_dbl_kind
       fmp_atm(:,6) = c0 !1.87e-11_dbl_kind
 
       end subroutine fmp_default

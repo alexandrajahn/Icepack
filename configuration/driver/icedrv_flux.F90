@@ -382,7 +382,7 @@
          zaeros          ! ocean aerosols (mmol/m^3)
 
       real (kind=dbl_kind), dimension (nx,icepack_max_mp), public :: &
-         zmps            ! ocean microplastics (mmol/m^3)
+         zmps            ! ocean microplastics for zmp (mmol/m^3)
 
 !=======================================================================
 
@@ -575,7 +575,6 @@
       fdon   (:,:)= c0
       ffep   (:,:)= c0
       ffed   (:,:)= c0
-      !AJ: Need to add MP fluxes here?
       !-----------------------------------------------------------------
       ! derived or computed fields
       !-----------------------------------------------------------------

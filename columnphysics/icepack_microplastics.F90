@@ -25,7 +25,7 @@
       implicit none
 
       private
-      public :: update_microplastics, update_snow_bgc
+      public :: update_microplastics, update_snow_bgc_mp
 
 !---------------------------------------------------------------------
 ! Uptake and release coefficients for microplastic tracers 
@@ -38,7 +38,7 @@
 
          krelm =   (/ c0, c0, c0, c0, c0, c0 /),      &       ! melt water release factor   
          krelsi =  (/ c0, c0, c0, c0, c0, c0 /),      &       ! snow-ice formation release factor
-         kupfb =   (/ c0, c0, c0, c0, c0, c0 /),      &       ! basal ice formation uptake factor
+         kupfb =   (/ c1, c1, c1, c1, c1, c1 /),      &       ! basal ice formation uptake factor
          kupff =   (/ c1, c1, c1, c1, c1, c1 /)               ! frazil ice formation uptake factor
                                                         ! kupff used in icepack_therm_itd.F90 but set here
 !=======================================================================
@@ -488,11 +488,12 @@
       end subroutine update_microplastics
 
 !=======================================================================
-
+! UNCLEAR IF THIS IS NEEDED. Seems to be NEEDED FOR ZMP? CAN'T BE SAME NAME AS FOR AEROSOLS, CAUSES BUILD ERROR
+! AJ. SO RENAMED TO _MP. But I get the same results for zmp as for zaero for the same forcing with calling this and without calling it for mp, so does it do somehting?
 !  Increase microplastics in snow surface due to deposition
 !  and vertical cycling : after update_microplastics
 
-      subroutine update_snow_bgc (dt,     nblyr,       &
+     subroutine update_snow_bgc_mp (dt,     nblyr,       &
                                 nslyr,                 &
                                 meltt,    melts,       &
                                 meltb,    congel,      &
@@ -866,7 +867,7 @@
          endif
         endif
 
-      end subroutine update_snow_bgc
+      end subroutine update_snow_bgc_mp
 
 !=======================================================================
 

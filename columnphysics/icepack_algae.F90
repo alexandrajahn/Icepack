@@ -60,8 +60,8 @@
       use icepack_warnings, only: icepack_warnings_setabort, icepack_warnings_aborted
 
       use icepack_aerosol, only: update_snow_bgc
-
-      use icepack_microplastics, only: update_snow_bgc
+      
+      use icepack_microplastics, only: update_snow_bgc_mp
 
       implicit none
 
@@ -272,6 +272,18 @@
                                 vicen,     vsnon,        &
                                 aicen,     flux_bio_atm, &
                                 zbgc_atmn, flux_bio_sno)
+     call update_snow_bgc_mp     (dt,        nblyr,        &
+                          nslyr,                   &
+                          meltt,     melts,        &
+                          meltb,     congel,       &
+                          snoice,    nbtrcr,       &
+                          fsnow,     ntrcr,        &
+                          trcrn,     bio_index,    &
+                          aice_old,  zbgc_snown,   &
+                          vice_old,  vsno_old,     &
+                          vicen,     vsnon,        &
+                          aicen,     flux_bio_atm, &
+                          zbgc_atmn, flux_bio_sno)
       if (icepack_warnings_aborted(subname)) return
 
       call z_biogeochemistry   (n_cat,        dt,        &
@@ -1042,16 +1054,8 @@
       endif
 
       !-----------------------------------------------------------------
-      !   Microlastics flux from atmosphere ; To be added AJ
+      !   Microlastics flux from atmosphere ?; To be added AJ
       !-----------------------------------------------------------------
-
-        !fmp_atm(:,1) = c0 ! 1.87e-11_dbl_kind ! kg/m^2 s
-        !fmp_atm(:,2) = c0 ! 1.87e-11_dbl_kind
-        !fmp_atm(:,3) = c0 ! 1.87e-11_dbl_kind
-        !fmp_atm(:,4) = 1.87e-11_dbl_kind
-        !fmp_atm(:,5) = 1.87e-11_dbl_kind
-        !fmp_atm(:,6) = c0 !1.87e-11_dbl_kind
-
 
       !-----------------------------------------------------------------
 

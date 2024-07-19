@@ -1115,7 +1115,7 @@
       do k = 1, max_aero
          ocean_bio_all(ks+k) = zaeros(k)             ! zaero
       enddo
-      ks = ks + max_aero + 1
+      ks = ks + max_aero
       do k = 1, max_mp
          ocean_bio_all(ks+k) = zmps(k)               ! zmp
       enddo
@@ -1213,7 +1213,7 @@
          zaeros(k) = c0
        enddo
        do k = 1, max_mp
-         zmps(k) = 8.5e-5_dbl_kind! Fixed ocean MP concentration, same as mp_ocn for non z MP traver; alterntive c0=0
+         zmps(k) = c1 !8.5e-5_dbl_kind! Fixed ocean MP concentration, same as mp_ocn for non z MP traver; alterntive c0=0
        enddo
 
       end subroutine icepack_init_ocean_bio

@@ -1764,7 +1764,7 @@
                                   trcr_base,       n_trcr_strata, &
                                   nt_strata,       bio_index)
                bio_index_o(nlt_zmp(mm)) = 2*icepack_max_algae + icepack_max_doc + icepack_max_dic &
-                           + icepack_max_don + 2*icepack_max_fe + 7 + mm !AJ: is this needed for ZMP tracer?
+                           + icepack_max_don + 2*icepack_max_fe + 7 + mm !AJ: eventually adjust mobility etc for zmp specific,                                                    currently just re-producing zaero
             enddo   ! mm
          endif      ! tr_zmp
 
