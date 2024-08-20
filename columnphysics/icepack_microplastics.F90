@@ -488,10 +488,10 @@
       end subroutine update_microplastics
 
 !=======================================================================
-! UNCLEAR IF THIS IS NEEDED. Seems to be NEEDED FOR ZMP? CAN'T BE SAME NAME AS FOR AEROSOLS, CAUSES BUILD ERROR
-! AJ. SO RENAMED TO _MP. But I get the same results for zmp as for zaero for the same forcing with calling this and without calling it for mp, so does it do somehting?
 !  Increase microplastics in snow surface due to deposition
 !  and vertical cycling : after update_microplastics
+
+!AJ: Currently this subroutine does not change the ZMP result, not for zaero nor for zmp. Produces zeros according to Nicole Jeffries. But could potentially be needed in the future. Tested that I get the same results for zmp as for zaero for the same atmos forcing with calling this and without calling it for mp, so it indeed currently doesn't do anything. Added it here and calling it in icepack_algae in case in the future it is needed.
 
      subroutine update_snow_bgc_mp (dt,     nblyr,       &
                                 nslyr,                 &

@@ -58,6 +58,7 @@
       use icepack_tracers,    only: ntrcr, nbtrcr_sw
       use icepack_tracers,    only: tr_pond_lvl, tr_pond_topo
       use icepack_tracers,    only: tr_bgc_N, tr_aero
+!      use icepack_tracers,    only: tr_mp, nt_zmp, tr_zmp, nlt_zmp_sw, n_zmp, n_mp
       use icepack_tracers,    only: nt_bgc_N, nt_zaero
       use icepack_tracers,    only: tr_zaero, nlt_chl_sw, nlt_zaero_sw
       use icepack_tracers,    only: n_algae, n_aero, n_zaero
@@ -3712,7 +3713,6 @@
                                         hpndn,    ipndn,     &
                                         aeron,    mpn,       &
                                         bgcNn,    zaeron,    &
-                                        zmpn,                &
                                         trcrn_bgcsw,         &
                                         TLAT,     TLON,      &
                                         calendar_type,       &
@@ -3788,8 +3788,7 @@
          aeron     , & ! aerosols (kg/m^3)
          mpn       , & ! microplasics (kg/m^3)
          bgcNn     , & ! bgc Nit tracers
-         zaeron    , & ! bgcz aero tracers
-         zmpn          ! bgcz microplastics tracers
+         zaeron        ! bgcz aero tracers
 
 
       real(kind=dbl_kind), dimension(:,:), intent(inout) :: &

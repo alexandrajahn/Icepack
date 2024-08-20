@@ -175,8 +175,8 @@
                         !                 2*max_algae + max_doc + 7 + max_dic + max_don + 2*max_fe
                         ! zaero(1:max_aero) = 2*max_algae + max_doc + 8 + max_dic + max_don + 2*max_fe :
                         !                     2*max_algae + max_doc + 7 + max_dic + max_don + 2*max_fe + max_aero
-                        ! zmp(1:max_mp) = 2*max_algae + max_doc + 8 + max_dic + max_don + 2*max_fe :
-                        !                     2*max_algae + max_doc + 7 + max_dic + max_don + 2*max_fe + max_mp
+                        ! zmp(1:max_mp) = 2*max_algae + max_doc + 8 + max_dic + max_don + 2*max_fe + max_aero :
+                        !                 2*max_algae + max_doc + 7 + max_dic + max_don + 2*max_fe + max_aero + max_mp
                         ! humic =  2*max_algae + max_doc + 8 + max_dic + max_don + 2*max_fe + max_aero + max_mp
 
       integer (kind=int_kind), dimension(nx,icepack_max_algae), public :: &

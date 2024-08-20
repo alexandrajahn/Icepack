@@ -265,7 +265,6 @@
                          mpn=trcrn(i,nt_mp:nt_mp+4*n_mp-1,:), &
                          bgcNn=trcrn(i,nt_bgc_N(1):nt_bgc_N(1)+n_algae*(nblyr+3)-1,:), &
                          zaeron=trcrn(i,nt_zaero(1):nt_zaero(1)+n_zaero*(nblyr+3)-1,:), &
-                         zmpn=trcrn(i,nt_zmp(1):nt_zmp(1)+n_zmp*(nblyr+3)-1,:), &
                          trcrn_bgcsw=ztrcr_sw,                 &
                          TLAT=TLAT(i), TLON=TLON(i),           &
                          yday=yday, sec=sec,                   &
@@ -1764,7 +1763,7 @@
                                   trcr_base,       n_trcr_strata, &
                                   nt_strata,       bio_index)
                bio_index_o(nlt_zmp(mm)) = 2*icepack_max_algae + icepack_max_doc + icepack_max_dic &
-                           + icepack_max_don + 2*icepack_max_fe + 7 + mm !AJ: eventually adjust mobility etc for zmp specific,                                                    currently just re-producing zaero
+                           + icepack_max_don + 2*icepack_max_fe + 7 + icepack_max_aero + mm !AJ: eventually adjust mobility etc for zmp specific,                                                                currently just re-producing zaero
             enddo   ! mm
          endif      ! tr_zmp
 

@@ -1213,7 +1213,7 @@
          zaeros(k) = c0
        enddo
        do k = 1, max_mp
-         zmps(k) = c1 !8.5e-5_dbl_kind! Fixed ocean MP concentration, same as mp_ocn for non z MP traver; alterntive c0=0
+         zmps(k) = 8.5e-5_dbl_kind! Fixed ocean MP concentration, same as mp_ocn for non z MP tracer
        enddo
 
       end subroutine icepack_init_ocean_bio

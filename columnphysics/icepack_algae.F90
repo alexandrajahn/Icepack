@@ -272,7 +272,8 @@
                                 vicen,     vsnon,        &
                                 aicen,     flux_bio_atm, &
                                 zbgc_atmn, flux_bio_sno)
-     call update_snow_bgc_mp     (dt,        nblyr,        &
+
+      call update_snow_bgc_mp  (dt,        nblyr,        &
                           nslyr,                   &
                           meltt,     melts,        &
                           meltb,     congel,       &
@@ -284,6 +285,7 @@
                           vicen,     vsnon,        &
                           aicen,     flux_bio_atm, &
                           zbgc_atmn, flux_bio_sno)
+     
       if (icepack_warnings_aborted(subname)) return
 
       call z_biogeochemistry   (n_cat,        dt,        &
