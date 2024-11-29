@@ -12,7 +12,7 @@
       use icedrv_domain_size, only: nblyr, max_nsw , max_ntrcr
       use icepack_intfc, only: icepack_max_nbtrcr, icepack_max_algae, icepack_max_aero
       use icepack_intfc, only: icepack_nmodal1, icepack_nmodal2
-      use icepack_intfc, only: icepack_nspint
+      use icepack_intfc, only: icepack_nspint_3bd, icepack_nspint_5bd
       use icepack_intfc, only: icepack_warnings_flush, icepack_warnings_aborted
       use icedrv_system, only: icedrv_system_abort
 
@@ -120,35 +120,7 @@
          public :: &
          fswpenln       ! visible SW entering ice layers (W m-2)
 
-      ! aerosol optical properties   -> band  |
-      !                                       v aerosol
-      ! for combined dust category, use category 4 properties
-      real (kind=dbl_kind), dimension(icepack_nspint,icepack_max_aero), public :: & 
-         kaer_tab   , & ! aerosol mass extinction cross section (m2/kg)
-         waer_tab   , & ! aerosol single scatter albedo (fraction)
-         gaer_tab       ! aerosol asymmetry parameter (cos(theta))
-
-      real (kind=dbl_kind), dimension(icepack_nspint,icepack_nmodal1), public :: & 
-         kaer_bc_tab, & ! BC mass extinction cross section (m2/kg)
-         waer_bc_tab, & ! BC single scatter albedo (fraction)
-         gaer_bc_tab    ! BC aerosol asymmetry parameter (cos(theta))
-
-      real (kind=dbl_kind), &
-         dimension (icepack_nspint,icepack_nmodal1,icepack_nmodal2), public :: &
-         bcenh          ! BC absorption enhancement factor
-
       ! biogeochemistry components
-
-      real (kind=dbl_kind), dimension (nblyr+2), public :: &
-         bgrid          ! biology nondimensional vertical grid points
-
-      real (kind=dbl_kind), dimension (nblyr+1), public :: &
-         igrid          ! biology vertical interface points
- 
-      real (kind=dbl_kind), dimension (nilyr+1), public :: &
-         cgrid     , &  ! CICE vertical coordinate
-         icgrid    , &  ! interface grid for CICE (shortwave variable)
-         swgrid         ! grid for ice tracers used in dEdd scheme
 
       real (kind=dbl_kind), dimension (nx,ncat), public :: &
          first_ice_real ! .true. = c1, .false. = c0
@@ -197,12 +169,12 @@
       integer (kind=int_kind), dimension(nx,icepack_max_algae), public :: &
          algal_peak     ! vertical location of algal maximum, 0 if no maximum
 
-      real (kind=dbl_kind), & 
+      real (kind=dbl_kind), &
          dimension (nx,nblyr+1,ncat), public :: &
          Zoo            ! N losses accumulated in timestep (ie. zooplankton/bacteria)
                         ! (mmol/m^3)
 
-      real (kind=dbl_kind), &  
+      real (kind=dbl_kind), &
          dimension (nx,ncat), public :: &
          dhbr_top   , & ! brine top change
          dhbr_bot       ! brine bottom change
@@ -223,28 +195,8 @@
          darcy_V            ! darcy velocity positive up (m/s)
 
       real (kind=dbl_kind), dimension (nx), public :: &
-         zsal_tot   , & ! Total ice salinity in per grid cell (g/m^2)
          chl_net    , & ! Total chla (mg chla/m^2) per grid cell
          NO_net         ! Total nitrate per grid cell
-
-      logical (kind=log_kind), dimension (nx), public :: &
-         Rayleigh_criteria    ! .true. means Ra_c was reached   
-
-      real (kind=dbl_kind), dimension (nx), public :: &
-         Rayleigh_real        ! .true. = c1, .false. = c0
-
-      real (kind=dbl_kind), & 
-         dimension (nx,ncat), public :: &
-         sice_rho       ! avg sea ice density  (kg/m^3)  ! ech: diagnostic only?
-
-      real (kind=dbl_kind), & 
-         dimension (nx,ncat), public :: &
-         fzsaln     , & ! category fzsal(kg/m^2/s) 
-         fzsaln_g       ! salt flux from gravity drainage only
-
-      real (kind=dbl_kind), dimension (nx), public :: &
-         fzsal      , & ! Total flux  of salt to ocean at time step for conservation
-         fzsal_g        ! Total gravity drainage flux
 
       real (kind=dbl_kind), dimension (nx,nblyr+1,ncat), public :: &
          zfswin         ! Shortwave flux into layers interpolated on bio grid  (W/m^2)
@@ -256,7 +208,7 @@
       real (kind=dbl_kind), dimension (nx), public :: &
          upNO       , & ! nitrate uptake rate (mmol/m^2/d) times aice
          upNH           ! ammonium uptake rate (mmol/m^2/d) times aice
-        
+
       real (kind=dbl_kind), &
          dimension(nx,max_ntrcr,ncat), public :: &
          trcrn_sw       ! bgc tracers active in the delta-Eddington shortwave
@@ -269,28 +221,21 @@
 
       ! floe size distribution
       real(kind=dbl_kind), dimension(nfsd), public ::  &
-         floe_rad_l,    &  ! fsd size lower bound in m (radius)
-         floe_rad_c,    &  ! fsd size bin centre in m (radius)
-         floe_binwidth     ! fsd size bin width in m (radius)
+         floe_rad_c     ! fsd size bin centre in m (radius)
 
       real (kind=dbl_kind), dimension (nx), public :: &
-         wave_sig_ht       ! significant height of waves (m)
+         wave_sig_ht    ! significant height of waves (m)
 
       real (kind=dbl_kind), dimension (nfreq), public :: &
-         wavefreq,      &  ! wave frequencies
-         dwavefreq         ! wave frequency bin widths
+         wavefreq,   &  ! wave frequencies
+         dwavefreq      ! wave frequency bin widths
 
       real (kind=dbl_kind), dimension (nx,nfreq), public :: &
-         wave_spectrum     ! wave spectrum
+         wave_spectrum  ! wave spectrum
 
-      real (kind=dbl_kind), dimension (nx,nfsd), public :: & 
+      real (kind=dbl_kind), dimension (nx,nfsd), public :: &
          ! change in floe size distribution due to processes
          d_afsd_newi, d_afsd_latg, d_afsd_latm, d_afsd_wave, d_afsd_weld
-
-      character (len=35), public, dimension(nfsd) :: &
-         c_fsd_range ! fsd floe_rad bounds (m)
-
-
 
 !=======================================================================
 

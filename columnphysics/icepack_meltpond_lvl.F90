@@ -18,6 +18,8 @@
       use icepack_parameters, only: c0, c1, c2, c10, p01, p5, puny
       use icepack_parameters, only: viscosity_dyn, rhoi, rhos, rhow, Timelt, Tffresh, Lfresh
       use icepack_parameters, only: gravit, depressT, rhofresh, kice, pndaspect, use_smliq_pnd
+      use icepack_parameters, only: ktherm, frzpnd, dpscale, hi_min
+      use icepack_tracers,    only: nilyr
       use icepack_warnings, only: warnstr, icepack_warnings_add
       use icepack_warnings, only: icepack_warnings_setabort, icepack_warnings_aborted
 
@@ -32,10 +34,7 @@
 
 !=======================================================================
 
-      subroutine compute_ponds_lvl(dt,     nilyr,        &
-                                   ktherm,               &
-                                   hi_min, dpscale,      &
-                                   frzpnd,               &
+      subroutine compute_ponds_lvl(dt,                   &
                                    rfrac,  meltt, melts, &
                                    frain,  Tair,  fsurfn,&
                                    dhs,    ffrac,        &
@@ -45,20 +44,10 @@
                                    apnd,   hpnd,  ipnd,  &
                                    meltsliqn)
 
-      integer (kind=int_kind), intent(in) :: &
-         nilyr, &    ! number of ice layers
-         ktherm      ! type of thermodynamics (0 0-layer, 1 BL99, 2 mushy)
+      real (kind=dbl_kind), intent(in) :: &
+         dt          ! time step (s)
 
       real (kind=dbl_kind), intent(in) :: &
-         dt,       & ! time step (s)  
-         hi_min,   & ! minimum ice thickness allowed for thermo (m)
-         dpscale     ! alter e-folding time scale for flushing
-
-      character (len=char_len), intent(in) :: &
-         frzpnd      ! pond refreezing parameterization
-
-      real (kind=dbl_kind), &
-         intent(in) :: &
          Tsfcn, &    ! surface temperature (C)
          alvl,  &    ! fraction of level ice
          rfrac, &    ! water fraction retained for melt ponds
@@ -72,20 +61,17 @@
          vsnon, &    ! snow volume (m)
          meltsliqn   ! liquid contribution to meltponds in dt (kg/m^2)
 
-      real (kind=dbl_kind), &
-         intent(inout) :: &
+      real (kind=dbl_kind), intent(inout) :: &
          apnd, hpnd, ipnd
 
       real (kind=dbl_kind), dimension (:), intent(in) :: &
          qicen, &  ! ice layer enthalpy (J m-3)
-         sicen     ! salinity (ppt)   
+         sicen     ! salinity (ppt)
 
-      real (kind=dbl_kind), &
-         intent(in) :: &
+      real (kind=dbl_kind), intent(in) :: &
          dhs       ! depth difference for snow on sea ice and pond ice
 
-      real (kind=dbl_kind), &
-         intent(out) :: &
+      real (kind=dbl_kind), intent(out) :: &
          ffrac     ! fraction of fsurfn over pond used to melt ipond
 
       ! local temporary variables
@@ -102,7 +88,7 @@
          dTs                    , & ! surface temperature diff for freeze-up (C)
          Tp                     , & ! pond freezing temperature (C)
          Ts                     , & ! surface air temperature (C)
-         apondn                 , & ! local pond area 
+         apondn                 , & ! local pond area
          hpondn                 , & ! local pond depth (m)
          dvn                    , & ! change in pond volume (m)
          hlid, alid             , & ! refrozen lid thickness, area
@@ -118,7 +104,7 @@
       character(len=*),parameter :: subname='(compute_ponds_lvl)'
 
       !-----------------------------------------------------------------
-      ! Initialize 
+      ! Initialize
       !-----------------------------------------------------------------
 
       volpn = hpnd * aicen * alvl * apnd
@@ -129,7 +115,7 @@
       !-----------------------------------------------------------------
 
       if (aicen*alvl > puny**2) then
-         
+
          hi = vicen/aicen
          hs = vsnon/aicen
          alvl_tmp = alvl
@@ -170,7 +156,7 @@
                dTs = max(Tp - Tsfcn,c0)
                dvn = dvn - volpn * (c1 - exp(rexp*dTs/Tp))
 
-            else 
+            else
                ! trim(frzpnd) == 'hlid' Stefan approximation
                ! assumes pond is fresh (freezing temperature = 0 C)
                ! and ice grows from existing pond ice
@@ -222,7 +208,7 @@
                apondn = min (sqrt(volpn/(pndaspect*aicen)), alvl_tmp)
                hpondn = pndaspect * apondn
 
-            else           ! melt water runs off deformed ice      
+            else           ! melt water runs off deformed ice
                apondn = c0
                hpondn = c0
             endif
@@ -253,7 +239,7 @@
                deltah = hpondn + hi - draft
                pressure_head = gravit * rhow * max(deltah, c0)
                Tmlt(:) = -sicen(:) * depressT
-               call brine_permeability(nilyr, qicen, &
+               call brine_permeability(qicen, &
                     sicen, Tmlt, perm)
                if (icepack_warnings_aborted(subname)) return
                drain = perm*pressure_head*dt / (viscosity_dyn*hi) * dpscale
@@ -284,18 +270,15 @@
 
 ! determine the liquid fraction of brine in the ice and the permeability
 
-      subroutine brine_permeability(nilyr, qicen, salin, Tmlt, perm)
+      subroutine brine_permeability(qicen, salin, Tmlt, perm)
 
       use icepack_therm_shared, only: calculate_Tin_from_qin
 
-      integer (kind=int_kind), intent(in) :: &
-         nilyr     ! number of ice layers
-
       real (kind=dbl_kind), dimension(:), intent(in) :: &
          qicen, &  ! enthalpy for each ice layer (J m-3)
-         salin, &  ! salinity (ppt)   
+         salin, &  ! salinity (ppt)
          Tmlt      ! melting temperature (C)
-    
+
       real (kind=dbl_kind), intent(out) :: &
          perm      ! permeability (m^2)
 
@@ -309,7 +292,7 @@
          phi       ! liquid fraction
 
       integer (kind=int_kind) :: k
-    
+
       character(len=*),parameter :: subname='(brine_permeability)'
 
       !-----------------------------------------------------------------
@@ -335,9 +318,9 @@
       !-----------------------------------------------------------------
 
       perm = 3.0e-8_dbl_kind * (minval(phi))**3
-    
+
       end subroutine brine_permeability
-  
+
 !=======================================================================
 
       end module icepack_meltpond_lvl

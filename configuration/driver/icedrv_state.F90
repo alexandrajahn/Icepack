@@ -10,7 +10,7 @@
 ! aicen(i,n)         aice(i)           ---
 ! vicen(i,n)         vice(i)           m
 ! vsnon(i,n)         vsno(i)           m
-! trcrn(i,it,n)      trcr(i,it)        
+! trcrn(i,it,n)      trcr(i,it)
 !
 ! Area is dimensionless because aice is the fractional area
 ! (normalized so that the sum over all categories, including open
@@ -42,14 +42,12 @@
       ! state of the ice aggregated over all categories
       !-----------------------------------------------------------------
 
-      real (kind=dbl_kind), dimension(nx), &
-         public :: &
+      real (kind=dbl_kind), dimension(nx), public :: &
          aice  , & ! concentration of ice
          vice  , & ! volume per unit area of ice          (m)
          vsno      ! volume per unit area of snow         (m)
 
-      real (kind=dbl_kind), &
-         dimension(nx,max_ntrcr), public :: &
+      real (kind=dbl_kind), dimension(nx,max_ntrcr), public :: &
          trcr      ! ice tracers
                    ! 1: surface temperature of ice/snow   (C)
 
@@ -57,18 +55,15 @@
       ! state of the ice for each category
       !-----------------------------------------------------------------
 
-      real (kind=dbl_kind), dimension (nx), &
-         public:: &
+      real (kind=dbl_kind), dimension (nx), public:: &
          aice0     ! concentration of open water
 
-      real (kind=dbl_kind), &
-         dimension (nx,ncat), public :: &
+      real (kind=dbl_kind), dimension (nx,ncat), public :: &
          aicen , & ! concentration of ice
          vicen , & ! volume per unit area of ice          (m)
          vsnon     ! volume per unit area of snow         (m)
 
-      real (kind=dbl_kind), public, &
-         dimension (nx,max_ntrcr,ncat) :: &
+      real (kind=dbl_kind), dimension (nx,max_ntrcr,ncat), public :: &
          trcrn     ! tracers
                    ! 1: surface temperature of ice/snow   (C)
 
@@ -104,7 +99,7 @@
          strength     ! ice strength (N/m)
 
       !-----------------------------------------------------------------
-      ! ice state at start of time step, saved for later in the step 
+      ! ice state at start of time step, saved for later in the step
       !-----------------------------------------------------------------
 
       real (kind=dbl_kind), dimension(nx), &
@@ -115,7 +110,7 @@
          dimension(nx,ncat), public :: &
          aicen_init  , & ! initial ice concentration, for linear ITD
          vicen_init  , & ! initial ice volume (m), for linear ITD
-         vsnon_init      ! initial snow volume (m), for aerosol 
+         vsnon_init      ! initial snow volume (m), for aerosol
 
 !=======================================================================
 

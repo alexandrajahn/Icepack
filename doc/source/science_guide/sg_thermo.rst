@@ -5,9 +5,8 @@
 Thermodynamics
 ==============
 
-The current Icepack version includes three thermodynamics
-options, the "zero-layer" thermodynamics of :cite:`Semtner76`
-(``ktherm`` = 0), the Bitz and Lipscomb model :cite:`Bitz99`
+The current Icepack version includes two thermodynamics
+options, the Bitz and Lipscomb model :cite:`Bitz99`
 (``ktherm`` = 1) that assumes a fixed salinity profile, and a "mushy"
 formulation (``ktherm`` = 2) in which salinity evolves
 :cite:`Turner13`. For each thickness category, Icepack computes
@@ -22,7 +21,10 @@ horizontally uniform column with ice thickness
 :math:`h_{sn} = v_{sn}/a_{in}`. (Henceforth we omit the category
 index \ :math:`n`.) Each column is divided into :math:`N_i` ice layers
 of thickness :math:`\Delta h_i = h_i/N_i` and :math:`N_s` snow layers of
-thickness :math:`\Delta h_s = h_s/N_s`. The surface temperature (i.e.,
+thickness :math:`\Delta h_s = h_s/N_s`.   Minimum ice and snow thickness
+is specified by namelist parameters ``hi_min`` and ``hs_min``.
+
+The surface temperature (i.e.,
 the temperature of ice or snow at the interface with the atmosphere) is
 :math:`T_{sf}`, which cannot exceed :math:`0^{\circ}C`. The temperature at the
 midpoint of the snow layer is :math:`T_s`, and the midpoint ice layer
@@ -30,6 +32,13 @@ temperatures are :math:`T_{ik}`, where :math:`k` ranges from 1 to
 :math:`N_i`. The temperature at the bottom of the ice is held at
 :math:`T_f`, the freezing temperature of the ocean mixed layer. All
 temperatures are in degrees Celsius unless stated otherwise.
+
+The ``tfrz_option`` namelist specifies the freezing temperature formulation.
+``minus1p8`` fixes the freezing temperature at -1.8C.  ``constant`` fixes
+the freeing point at whatever value is specified by the parameter ``Tocnfrz``.
+``linear_salt`` sets the freezing temperature based on salinity, 
+:math:`Tf = -depressT * sss`.  And ``mushy`` uses the mushy formulation for setting
+the freezing temperature.
 
 Each ice layer has an enthalpy :math:`q_{ik}`, defined as the negative
 of the energy required to melt a unit volume of ice and raise its
@@ -55,6 +64,39 @@ the snow and sea ice and there is abundant internal shorwave absorbed. One can c
 to "move" the excess internal shortwave in this case up to the top surface to be reabsorbed.
 The namelist parameters for this option are ``sw_redist``, ``sw_frac``, and ``sw_dtemp``.
 By default, ``sw_redist`` is set to ``.false.``
+
+Snow fraction
+-------------
+
+In several places in the code, the snow fraction over ice (either sea ice or pond lids) varies
+as a function of snow depth.  That is, thin layers of snow are assumed to be patchy, which
+allows the shortwave flux to increase gradually as the layer thins, preventing sudden changes
+in the shortwave reaching the sea ice (which can cause the thermodynamics solver to not converge).
+For example, the parameter ``snowpatch`` is used for the CCSM3 radiation scheme, with a default
+value of 0.02:
+
+.. math::
+   f_{snow} = \frac{h_s}{h_s + h_{snowpatch}},
+
+The parameters ``hs0`` and ``hs1`` are used similarly for delta-Eddington radiation calculations with
+meltponds, with ``hs0`` over sea ice and ``hs1`` over pond ice.
+
+In the tests shown in :cite:`Hunke13`, :math:`h_{s0}=0` for all cases except with the cesm
+pond scheme; that pond scheme has now been deprecated.  :math:`h_{s0}` can be used with the topo pond
+scheme, although its impacts have not been documented.  We enforce :math:`hs0=0` for level-ice ponds
+because the infiltration of snow by pond water accomplishes the gradual radiative forcing
+transition for which the patchy-snow parameters were originally intended. When level-ice ponds
+are not used, then a typical value for hs0 is 0.03.
+
+With level-ice ponds, the pond water is allowed to infiltrate snow over the level ice area,
+invisible to the radiation scheme, until the water becomes deep enough to show through the
+snow layer. The pond fraction is computed during this process and then used to
+set the snow fraction such that :math:`f_{snow}+f_{pond}=1`. The ponds are only on the level ice
+area, and so there is still snow on the ridges even if the entire level ice area becomes filled
+with ponds.
+
+See :cite:`Hunke13` for a discussion of the impacts of varying hs1, whose default value is 0.03.
+
 
 .. _ponds:
 
@@ -101,34 +143,6 @@ calculation.
 In addition to the physical processes discussed below, tracer equations
 and definitions for melt ponds are also described in
 the :ref:`tracers` section.
-
-CESM formulation (``tr_pond_cesm`` = true)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Melt pond area and thickness tracers are carried on each ice thickness
-category as in the :ref:`tracers` section. Defined simply as the product
-of pond area, :math:`a_p`, and depth, :math:`h_p`, the melt pond volume,
-:math:`V_{p}`, grows through addition of ice or snow melt water or rain
-water, and shrinks when the ice surface temperature becomes cold,
-
-.. math::
-   \begin{aligned}
-   {\rm pond \ growth:\ } \ V_{p}^\prime &= V_{p}(t) +\Delta V_{melt} , \\
-   {\rm pond \ contraction:\ } \ V_{p}(t+\Delta t) &= V_{p}^\prime\exp\left[r_2\left( {\max\left(T_p-T_{sfc}, 0\right) \over T_p}\right)\right], \end{aligned}
-   :label: meltpond-cesm
-
-where :math:`dh_{i}` and :math:`dh_{s}` represent ice and snow melt at
-the top surface of each thickness category and :math:`r_2=0.01`. Here,
-:math:`T_p` is a reference temperature equal to :math:`-2^\circ`\ C.
-Pond depth is assumed to be a linear function of the pond fraction
-(:math:`h_p=\delta_p a_p`) and is limited by the category ice thickness
-(:math:`h_p \le 0.9 h_i`). The pond shape (``pndaspect``)
-:math:`\delta_p = 0.8` in the standard CESM pond configuration. The area
-and thickness are computed according to the assumed pond shape, and the
-pond area is then reduced in the presence of snow for the radiation
-calculation. Ponds are allowed only on ice at least 1 cm thick. This
-formulation differs slightly from that documented in
-:cite:`Holland12`.
 
 Topographic formulation (``tr_pond_topo`` = true)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -705,8 +719,10 @@ Shortwave radiation: Delta-Eddington
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Two methods for computing albedo and shortwave fluxes are available, the
-"ccsm3" method, described below, and a multiple scattering
-radiative transfer scheme that uses a Delta-Eddington approach.
+"ccsm3" method, described in the next section, and a multiple scattering
+radiative transfer scheme that uses a Delta-Eddington approach
+(``shortwave`` = ``dEdd``).
+
 "Inherent" optical properties (IOPs) for snow and sea ice, such as
 extinction coefficient and single scattering albedo, are prescribed
 based on physical measurements; reflected, absorbed and transmitted
@@ -715,12 +731,29 @@ for each snow and ice layer in a self-consistent manner. Absorptive
 effects of inclusions in the ice/snow matrix such as dust and algae can
 also be included, along with radiative treatment of melt ponds and other
 changes in physical properties, for example granularization associated
-with snow aging. The Delta-Eddington formulation is described in detail
+with snow aging.
+
+The Delta-Eddington formulation is described in detail
 in :cite:`Briegleb07`. Since publication of this technical paper,
 a number of improvements have been made to the Delta-Eddington scheme,
 including a surface scattering layer and internal shortwave absorption
 for snow, generalization for multiple snow layers and more than four
 layers of ice, and updated IOP values.
+
+In addition, a 5-band option for snow has
+been added based on :cite:`Dang19` using parameters derived from the
+SNICAR snow model (``shortwave`` = ``dEdd_snicar_ad``). The 3-band
+Delta-Eddington data is still used for non-snow-covered surfaces. The
+5-band option calculates snow radiative transfer properties for 1 visible and
+4 near-infrared bands, and the reflection, absorption and transmission of
+direct and diffuse shorwave incidents are computed separately, thus removing
+the snow grain adjustment used in the 3-band Delta-Eddington scheme.  Also,
+albedo and absorption of snow-covered sea ice are adjusted for solar zenith
+angles greater than 75 degrees.  Because the 5-band lookup tables are very
+large, they can be slow to compile.  The setting ``ICE_SNICARHC`` is false
+for simulations not using the ``dEdd_snicar_ad`` option, and must be set
+to true in order to use the hard-coded (HC) lookup tables generated from the
+SNICAR model.
 
 The namelist parameters ``R_ice`` and ``R_pnd`` adjust the albedo of bare or
 ponded ice by the product of the namelist value and one standard
@@ -863,16 +896,6 @@ that :math:`F_{bot} + F_{side} \ge F_{frzmlt}` in the case that
 
 New temperatures
 ----------------
-
-Zero-layer thermodynamics (``ktherm`` = 0)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-An option for zero-layer thermodynamics :cite:`Semtner76` is
-available in this version of Icepack by setting the namelist parameter
-``ktherm`` to 0 and changing the number of ice layers, nilyr, in
-**icedrv\_domain\_size.F90** to 1. In the zero-layer case, the ice is
-fresh and the thermodynamic calculations are much simpler than in the
-other configurations, which we describe here.
 
 Bitz and Lipscomb thermodynamics (``ktherm`` = 1)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1297,7 +1320,8 @@ contains salt, it usually will be fully melted at a temperature below
 :math:`0^{\circ}C`.
 Equations :eq:`ice-enthalpy` and :eq:`enth-def` are
 equivalent except for the density used in the term representing the
-energy required to bring the melt water temperature to (:math:`\rho_i`
+energy required to bring the melt water temperature to :math:`0^{\circ}C`
+(:math:`\rho_i`
 and :math:`\rho_w` in equations :eq:`ice-enthalpy` and
 :eq:`enth-def`, respectively).
 
@@ -1665,7 +1689,8 @@ consistently (from a mushy physics point of view) to both enthalpy and
 bulk salinity, the resulting temperature may be changed to be greater
 than the limit allowed in the thermodynamics routines. If this situation
 is detected, the code corrects the enthalpy so the temperature is below
-the limiting value. Conservation of energy is ensured by placing the
+the limiting value. The limiting value, ``Tliquidus_max`` can be specified
+in namelist.  Conservation of energy is ensured by placing the
 excess energy in the ocean, and the code writes a warning (see :ref:`aborts`) 
 that this has
 occurred to the diagnostics file. This situation only occurs with the
@@ -1712,9 +1737,21 @@ conductive heat flux at the bottom surface:
 
 If ice is melting at the bottom surface, :math:`q`
 in Equation :eq:`bottom-melting` is the enthalpy of the bottom ice layer. If
-ice is growing, :math:`q` is the enthalpy of new ice with temperature
-:math:`T_f` and salinity :math:`S_{max}` (``ktherm`` = 1) or ocean surface
-salinity (``ktherm`` = 2). This ice is added to the bottom layer.
+ice is growing, :math:`q` is the enthalpy of new ice added to the bottom layer with
+temperature :math:`T_f` and salinity :math:`S_{max}` (``ktherm`` = 1) for the Bitz99
+:cite:`Bitz99` formulation.  The original mushy thermodynamics
+(``ktherm`` = 2, ``congel_freeze`` = 'two-step') formed new ice in two steps, first
+moving the lower ice boundary into the ocean to form a mushy layer with an initial
+liquid fraction :math:`phi_{init}`, then freezing the new ice in the next step.  In
+this case, the freezing temperature is calculated using the ocean surface salinity
+:math:`SSS`.  A second mushy thermo method
+(``ktherm`` = 2, ``congel_freeze`` = 'one-step') freezes the ice immediately using
+the brine salinity :math:`phi_{init} * SSS` :cite:`Plante24`.
+In the two-step method, enthalpy not
+yet used to freeze the ice is returned to the ocean, causing frazil ice to form
+instead.  Together, the congelation and frazil ice add up to a similar total amount
+of new ice, but the differing freezing mechanism complicates comparisons with observational
+data and there is an unnecessary lag in ice-ocean coupling.
 
 In general, frazil ice formed in the ocean is added to the thinnest ice
 category. The new ice is grown in the open water area of the grid cell

@@ -1,8 +1,20 @@
 
 module icepack_warnings
 
-      use icepack_kinds
+! Provides a logging and abort package for Icepack.
+! Icepack has no idea about MPI, OpenMP, or IO.
+! Store error message and provide methods for the driver
+! to write these messages to a Fortran unit number.
+! Needs to be thread safe.  This could be called within
+! a threaded or non-threaded region or both.  Need to make
+! sure multiple threads are not adding to the warnings
+! buffer at the same time.  Also need to make sure warnings
+! buffers are not added at the same time messages are
+! cleared by a different thread.  Use multiple critical
+! regions using the same ID to allow threads to block
+! each other during multiple operations.
 
+      use icepack_kinds
       implicit none
 
       private
@@ -10,7 +22,7 @@ module icepack_warnings
       ! warning messages
       character(len=char_len_long), dimension(:), allocatable :: warnings
       integer :: nWarnings = 0
-      integer, parameter :: nWarningsBuffer = 10 ! incremental number of messages
+      integer :: nWarningsBuffer = 10 ! incremental number of messages
 
       ! abort flag, accessed via icepack_warnings_setabort and icepack_warnings_aborted
       logical :: warning_abort = .false.
@@ -24,11 +36,15 @@ module icepack_warnings
         icepack_warnings_flush,    &
         icepack_warnings_aborted,  &
         icepack_warnings_add,      &
-        icepack_warnings_setabort
+        icepack_warnings_setabort, &
+        icepack_warnings_getall
 
       private :: &
-        icepack_warnings_getall,   &
         icepack_warnings_getone
+
+! variables are shared by default
+! have warnstr be private
+!$OMP THREADPRIVATE(warnstr)
 
 !=======================================================================
 
@@ -68,9 +84,15 @@ contains
 
         if (abortflag) then
           write(warnstr,*) subname,abortflag
-          if (present(file)) write(warnstr,*) trim(warnstr)//' :file '//trim(file)
-          if (present(line)) write(warnstr,*) trim(warnstr)//' :line ',line
           call icepack_warnings_add(warnstr)
+          if (present(file)) then
+             write(warnstr,*) trim(warnstr)//' :file '//trim(file)
+             call icepack_warnings_add(warnstr)
+          endif
+          if (present(line)) then
+             write(warnstr,*) trim(warnstr)//' :line ',line
+             call icepack_warnings_add(warnstr)
+          endif
         endif
 
         warning_abort = abortflag
@@ -92,12 +114,16 @@ contains
       end subroutine icepack_warnings_clear
 
 !=======================================================================
-      
+!autodocument_start icepack_warnings_clear
+! return an array of all the current warning messages
+
       subroutine icepack_warnings_getall(warningsOut)
 
         character(len=char_len_long), dimension(:), allocatable, intent(out) :: &
              warningsOut
- 
+
+!autodocument_end
+
         integer :: iWarning
         character(len=*),parameter :: subname='(icepack_warnings_getall)'
 
@@ -123,14 +149,9 @@ contains
         integer :: iWarning
         character(len=*),parameter :: subname='(icepack_warnings_print)'
 
-! tcraig
-! this code intermittenly aborts on recursive IO errors with intel
-! not sure if it's OMP or something else causing this
-!$OMP MASTER
         do iWarning = 1, nWarnings
           write(iounit,*) trim(icepack_warnings_getone(iWarning))
         enddo
-!$OMP END MASTER
 
       end subroutine icepack_warnings_print
 
@@ -146,10 +167,12 @@ contains
 
         character(len=*),parameter :: subname='(icepack_warnings_flush)'
 
+!$OMP CRITICAL (omp_warnings)
         if (nWarnings > 0) then
           call icepack_warnings_print(iounit)
         endif
         call icepack_warnings_clear()
+!$OMP END CRITICAL (omp_warnings)
 
       end subroutine icepack_warnings_flush
 
@@ -159,7 +182,7 @@ contains
 
         character(len=*), intent(in) :: warning ! warning to add to array of warnings
 
-        ! local 
+        ! local
 
         character(len=char_len_long), dimension(:), allocatable :: warningsTmp
         integer :: &
@@ -167,7 +190,7 @@ contains
              iWarning ! warning index
         character(len=*),parameter :: subname='(icepack_warnings_add)'
 
-!$OMP CRITICAL (omp_warnings_add)
+!$OMP CRITICAL (omp_warnings)
         ! check if warnings array is not allocated
         if (.not. allocated(warnings)) then
 
@@ -177,15 +200,14 @@ contains
            ! set initial number of nWarnings
            nWarnings = 0
 
-        ! already allocated
         else
 
            ! find the size of the warnings array at the start
            nWarningsArray = size(warnings)
-           
+
            ! check to see if need more space in warnings array
            if (nWarnings + 1 > nWarningsArray) then
-           
+
               ! allocate the temporary warning storage
               allocate(warningsTmp(nWarningsArray))
 
@@ -206,16 +228,18 @@ contains
               ! deallocate the temporary storage
               deallocate(warningsTmp)
 
+              ! increase nWarningsBuffer for next reallocation
+              nWarningsBuffer = nWarningsBuffer * 2
            endif
-              
+
         endif
 
         ! increase warning number
         nWarnings = nWarnings + 1
-!$OMP END CRITICAL (omp_warnings_add)
 
         ! add the new warning
         warnings(nWarnings) = trim(warning)
+!$OMP END CRITICAL (omp_warnings)
 
       end subroutine icepack_warnings_add
 

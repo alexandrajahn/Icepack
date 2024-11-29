@@ -16,7 +16,11 @@
       use icepack_parameters, only: isnw_T, isnw_Tgrd, isnw_rhos
       use icepack_parameters, only: snowage_rhos, snowage_Tgrd, snowage_T
       use icepack_parameters, only: snowage_tau, snowage_kappa, snowage_drdt0
-      use icepack_parameters, only: snw_aging_table
+      use icepack_parameters, only: snw_aging_table, use_smliq_pnd
+      use icepack_tracers, only: ncat, nilyr, nslyr
+
+      use icepack_therm_shared, only: icepack_ice_temperature
+      use icepack_therm_shared, only: adjust_enthalpy
 
       use icepack_warnings, only: icepack_warnings_add, icepack_warnings_setabort
       use icepack_warnings, only: icepack_warnings_aborted
@@ -28,7 +32,8 @@
 
       real (kind=dbl_kind), parameter, public :: &
          S_r  = 0.033_dbl_kind, & ! irreducible saturation (Anderson 1976)
-         S_wet= 4.22e-5_dbl_kind  ! (um^3/s) wet metamorphism parameters
+         S_wet= 4.22e5_dbl_kind  ! wet metamorphism parameter (um^3/s)
+                                  ! = 1.e18 * 4.22e-13 (Oleson 2010)
 
       real (kind=dbl_kind) :: &
          min_rhos, &   ! snowtable axis data, assumes linear data
@@ -99,9 +104,46 @@
             min_T      = 223.15_dbl_kind
             del_T      =   5.0_dbl_kind
             lin_T      = .true.
-            allocate (snowage_tau  (isnw_rhos,isnw_Tgrd,isnw_T))
-            allocate (snowage_kappa(isnw_rhos,isnw_Tgrd,isnw_T))
-            allocate (snowage_drdt0(isnw_rhos,isnw_Tgrd,isnw_T))
+            ! check if these are already allocated/set, if so, make sure size is OK
+            if (allocated(snowage_tau))   then
+               if (size(snowage_tau,dim=1) /= isnw_rhos .or. &
+                   size(snowage_tau,dim=2) /= isnw_Tgrd .or. &
+                   size(snowage_tau,dim=3) /= isnw_T   ) then
+                  call icepack_warnings_setabort(.true.,__FILE__,__LINE__)
+                  call icepack_warnings_add(subname//'ERROR: snowage_tau size snw_aging_table=snicar')
+                  return
+               endif
+            else
+               allocate (snowage_tau  (isnw_rhos,isnw_Tgrd,isnw_T))
+            endif
+
+            if (allocated(snowage_kappa)) then
+               if (size(snowage_kappa,dim=1) /= isnw_rhos .or. &
+                   size(snowage_kappa,dim=2) /= isnw_Tgrd .or. &
+                   size(snowage_kappa,dim=3) /= isnw_T   ) then
+                  call icepack_warnings_setabort(.true.,__FILE__,__LINE__)
+                  call icepack_warnings_add(subname//'ERROR: snowage_kappa size snw_aging_table=snicar')
+                  return
+               endif
+            else
+               allocate (snowage_kappa(isnw_rhos,isnw_Tgrd,isnw_T))
+            endif
+
+            if (allocated(snowage_drdt0)) then
+               if (size(snowage_drdt0,dim=1) /= isnw_rhos .or. &
+                   size(snowage_drdt0,dim=2) /= isnw_Tgrd .or. &
+                   size(snowage_drdt0,dim=3) /= isnw_T   ) then
+                  call icepack_warnings_setabort(.true.,__FILE__,__LINE__)
+                  call icepack_warnings_add(subname//'ERROR: snowage_drdt0 size snw_aging_table=snicar')
+                  return
+               endif
+            else
+               allocate (snowage_drdt0(isnw_rhos,isnw_Tgrd,isnw_T))
+            endif
+
+            if (allocated(snowage_rhos))  deallocate(snowage_rhos)
+            if (allocated(snowage_Tgrd))  deallocate(snowage_Tgrd)
+            if (allocated(snowage_T))     deallocate(snowage_T)
             allocate (snowage_rhos (isnw_rhos))
             allocate (snowage_Tgrd (isnw_Tgrd))
             allocate (snowage_T    (isnw_T))
@@ -133,6 +175,12 @@
             min_T      = 243.15_dbl_kind
             del_T      =   5.0_dbl_kind
             lin_T      = .true.
+            if (allocated(snowage_tau))   deallocate(snowage_tau)
+            if (allocated(snowage_kappa)) deallocate(snowage_kappa)
+            if (allocated(snowage_drdt0)) deallocate(snowage_drdt0)
+            if (allocated(snowage_rhos))  deallocate(snowage_rhos)
+            if (allocated(snowage_Tgrd))  deallocate(snowage_Tgrd)
+            if (allocated(snowage_T))     deallocate(snowage_T)
             allocate (snowage_tau  (isnw_rhos,isnw_Tgrd,isnw_T))
             allocate (snowage_kappa(isnw_rhos,isnw_Tgrd,isnw_T))
             allocate (snowage_drdt0(isnw_rhos,isnw_Tgrd,isnw_T))
@@ -193,8 +241,7 @@
 ! authors: Elizabeth C. Hunke, LANL
 !          Nicole Jeffery, LANL
 
-      subroutine icepack_step_snow(dt,        nilyr,     &
-                                   nslyr,     ncat,      &
+      subroutine icepack_step_snow(dt,                   &
                                    wind,      aice,      &
                                    aicen,     vicen,     &
                                    vsnon,     Tsfc,      &
@@ -205,13 +252,6 @@
                                    rsnw,      rhos_cmpn, &
                                    fresh,     fhocn,     &
                                    fsloss,    fsnow)
-
-      use icepack_therm_shared, only: icepack_ice_temperature
-
-      integer (kind=int_kind), intent(in) :: &
-         nslyr, & ! number of snow layers
-         nilyr, & ! number of ice  layers
-         ncat     ! number of thickness categories
 
       real (kind=dbl_kind), intent(in) :: &
          dt     , & ! time step
@@ -264,14 +304,12 @@
       ! Initialize effective snow density (compaction) for new snow
       !-----------------------------------------------------------------
 
-      if (trim(snwredist) /= 'none') then
+      if (snwredist(1:3) == 'ITD') then
          do n = 1, ncat
             do k = 1, nslyr
                if (rhos_cmpn(k,n) < rhosmin) rhos_cmpn(k,n) = rhosnew
             enddo
          enddo
-      else
-         rhos_cmpn(:,:) = rhos
       endif
 
       !-----------------------------------------------------------------
@@ -286,7 +324,6 @@
 
       if (snwredist(1:3) == 'ITD' .and. aice > puny) then
          call snow_redist(dt,                  &
-                          nslyr,    ncat,      &
                           wind,     aicen(:),  &
                           vicen(:), vsnon(:),  &
                           zqsn(:,:),           &
@@ -325,8 +362,7 @@
             endif
          enddo
 
-         call update_snow_radius (dt,         ncat,  &
-                                  nslyr,      nilyr, &
+         call update_snow_radius (dt,                &
                                   rsnw,       hin,   &
                                   Tsfc,       zTin1, &
                                   hsn,        zqsn,  &
@@ -354,14 +390,8 @@
 ! volume, mass and energy include factor of ain
 ! thickness does not
 
-      subroutine snow_redist(dt, nslyr, ncat, wind, ain, vin, vsn, zqsn, &
+      subroutine snow_redist(dt, wind, ain, vin, vsn, zqsn, &
          alvl, vlvl, fresh, fhocn, fsloss, rhos_cmpn, fsnow)
-
-      use icepack_therm_shared, only: adjust_enthalpy
-
-      integer (kind=int_kind), intent(in) :: &
-         nslyr     , & ! number of snow layers
-         ncat          ! number of thickness categories
 
       real (kind=dbl_kind), intent(in) :: &
          dt        , & ! time step (s)
@@ -641,11 +671,13 @@
                      zs2(k+1) = zs2(k) + hslyr  ! new layer depths (equal thickness)
                   enddo
 
-                  call adjust_enthalpy (nslyr,                &
-                                        zs1(:),   zs2(:),     &
-                                        hslyr,    hsn_new(n), &
+                  call adjust_enthalpy (nslyr,              &
+                                        zs1(:), zs2(:),     &
+                                        hslyr , hsn_new(n), &
                                         zqsn(:,n))
                   if (icepack_warnings_aborted(subname)) return
+               else
+                  hsn_new(n) = hsn_new(n) + dhsn
                endif   ! nslyr > 1
             endif      ! |dhsn| > puny
          endif         ! ain > puny
@@ -781,13 +813,8 @@
 
 !  Snow grain metamorphism
 
-      subroutine update_snow_radius (dt, ncat, nslyr, nilyr, rsnw, hin, &
+      subroutine update_snow_radius (dt, rsnw, hin, &
                                      Tsfc, zTin, hsn, zqsn, smice, smliq)
-
-      integer (kind=int_kind), intent(in) :: &
-         ncat     , & ! number of categories
-         nslyr    , & ! number of snow layers
-         nilyr        ! number of ice layers
 
       real (kind=dbl_kind), intent(in) :: &
          dt           ! time step
@@ -828,7 +855,7 @@
       !-----------------------------------------------------------------
       ! dry metamorphism
       !-----------------------------------------------------------------
-            call snow_dry_metamorph (nslyr, nilyr, dt, rsnw(:,n), &
+            call snow_dry_metamorph (dt, rsnw(:,n), &
                                      drsnw_dry, zqsn(:,n), Tsfc(n), &
                                      zTin(n), hsn(n), hin(n))
             if (icepack_warnings_aborted(subname)) return
@@ -859,7 +886,7 @@
 
 !  Snow grain metamorphism
 
-      subroutine snow_dry_metamorph (nslyr,nilyr, dt, rsnw, drsnw_dry, zqsn, &
+      subroutine snow_dry_metamorph (dt, rsnw, drsnw_dry, zqsn, &
                                      Tsfc, zTin1, hsn, hin)
 
       ! Vapor redistribution: Method is to retrieve 3 best-fit parameters that
@@ -875,20 +902,14 @@
       !   dr_fresh is the difference between the current and fresh snow states
       !   (r_current - r_fresh).
 
-      integer (kind=int_kind), intent(in) :: &
-         nslyr,  & ! number of snow layers
-         nilyr     ! number of ice layers
-
       real (kind=dbl_kind), intent(in) :: &
          dt                    ! time step (s)
 
-      real (kind=dbl_kind), dimension(nslyr), &
-         intent(in) :: &
+      real (kind=dbl_kind), dimension(nslyr), intent(in) :: &
          rsnw,   & ! snow grain radius (10^-6 m)
          zqsn      ! snow enthalpy  (J m-3)
 
-      real (kind=dbl_kind), dimension(nslyr), &
-         intent(inout) :: &
+      real (kind=dbl_kind), dimension(nslyr), intent(inout) :: &
          drsnw_dry ! change due to snow aging (10^-6 m)
 
       real (kind=dbl_kind), intent(in) :: &
@@ -919,7 +940,7 @@
          dzi,       & ! ice layer thickness (m)
          dz           ! dzs + dzi (m)
 
-      logical (kind=log_kind) :: &
+      logical (kind=log_kind), save :: &
          first_call = .true.   ! first call flag
 
       character (char_len) :: &
@@ -1080,7 +1101,7 @@
       dr_wet = c0
       fliq = c1
       if (smice + smliq > c0 .and. rsnw > c0) then
-         fliq = min(smliq/(smice + smliq),p1)*c100
+         fliq = min(smliq/(smice + smliq),p1)
          dr_wet = S_wet * fliq**3*dt/(c4*pi*rsnw**2)
       endif
 
@@ -1134,11 +1155,8 @@
 
 !  Conversions between ice mass, liquid water mass in snow
 
-      subroutine drain_snow (nslyr, vsnon, aicen, &
+      subroutine drain_snow (vsnon, aicen, &
                              massice, massliq, meltsliq)
-
-      integer (kind=int_kind), intent(in) :: &
-         nslyr     ! number of snow layers
 
       real (kind=dbl_kind), intent(in) :: &
          vsnon,  & ! snow volume (m)
@@ -1147,12 +1165,10 @@
       real (kind=dbl_kind), intent(inout) :: &
          meltsliq  ! total liquid content (kg/m^2)
 
-      real (kind=dbl_kind), dimension(nslyr), &
-         intent(in) :: &
+      real (kind=dbl_kind), dimension(nslyr), intent(in) :: &
          massice   ! mass of ice in snow (kg/m^2)
 
-      real (kind=dbl_kind), dimension(nslyr), &
-         intent(inout) :: &
+      real (kind=dbl_kind), dimension(nslyr), intent(inout) :: &
          massliq   ! mass of liquid in snow (kg/m^2)
 
       ! local temporary variables
@@ -1161,7 +1177,8 @@
 
       real (kind=dbl_kind) :: &
          hslyr,  & ! snow layer thickness (m)
-         hsn       ! snow thickness (m)
+         hsn,    & ! snow thickness (m)
+         sliq      ! snow liquid content (kg/m^2)
 
       real (kind=dbl_kind), dimension(nslyr) :: &
          dlin    , & ! liquid mass into the layer from above (kg/m^2)
@@ -1172,27 +1189,28 @@
       character (len=*), parameter :: subname='(drain_snow)'
 
       hsn = c0
+      sliq = c0
       if (aicen > c0) hsn = vsnon/aicen
       if (hsn > puny) then
          dlin (:) = c0
          dlout(:) = c0
          hslyr    = hsn / real(nslyr,kind=dbl_kind)
-         meltsliq = c0
          do k = 1, nslyr
             massliq(k) = massliq(k) + dlin(k)   ! add liquid in from layer above
             phi_ice(k) = min(c1, massice(k) / (rhoi    *hslyr))
             phi_liq(k) =         massliq(k) / (rhofresh*hslyr)
-            dlout(k)   = max(c0, (phi_liq(k) - S_r*(c1-phi_ice(k))) / rhofresh*hslyr)
+            dlout(k)   = max(c0, (phi_liq(k) - S_r*(c1-phi_ice(k))) * rhofresh * hslyr)
             massliq(k) = massliq(k) - dlout(k)
             if (k < nslyr) then
                dlin(k+1) = dlout(k)
             else
-               meltsliq = dlout(nslyr) ! this (re)initializes meltsliq
+               sliq = dlout(nslyr) ! this (re)initializes meltsliq
             endif
          enddo
       else
-         meltsliq = meltsliq  ! computed in thickness_changes
+         sliq = meltsliq  ! computed in thickness_changes
       endif
+      if (use_smliq_pnd) meltsliq = sliq
 
       end subroutine drain_snow
 

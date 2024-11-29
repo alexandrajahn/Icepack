@@ -34,7 +34,7 @@
       integer, parameter, public  :: isph216o = 2 ! H216O similar to "regular"
       integer, parameter, public  :: isphdo   = 3 ! HDO
       integer, parameter, public  :: isph218o = 4 ! H218O
-      integer, parameter, public  :: pwtspec  = 4 ! number of water species 
+      integer, parameter, public  :: pwtspec  = 4 ! number of water species
                                                   ! h2o,hdo,h218o,h216o
 
 !=======================================================================
@@ -45,8 +45,7 @@
 !
 !  Increase isotope in ice or snow surface due to deposition and loss
 !
-      subroutine update_isotope (dt,                  &
-                                nilyr,    nslyr,      &
+      subroutine update_isotope(dt,                   &
                                 meltt,    melts,      &
                                 meltb,    congel,     &
                                 snoice,   evap,       &
@@ -62,9 +61,6 @@
 
 !     use water_isotopes, only: wiso_alpi
       use icepack_parameters, only: ktherm, rhoi, rhos, Tffresh
-
-      integer (kind=int_kind), intent(in) :: &
-        nilyr, nslyr
 
       real (kind=dbl_kind), intent(in) :: &
         dt                     ! time step
@@ -83,21 +79,24 @@
         aicen,      & ! ice area
         aice_old,   & ! beginning values
         vice_old,   &
-        vsno_old,   &
-        HDO_ocn,    & !
-        H2_16O_ocn, & !
-        H2_18O_ocn    !
-
-      real (kind=dbl_kind), dimension(:), intent(in) ::  &
-        fiso_atm,   & ! isotopic snowfall (kg/m^2/s of water)
-        Qref_iso      ! isotope reference humidity
+        vsno_old
 
       real (kind=dbl_kind), dimension(:), intent(inout) :: &
         fiso_ocnn,  & ! isotopic freshwater (kg/m^2/s)
         fiso_evapn    ! evaporative water flux (kg/m^2/s)
 
       real (kind=dbl_kind), dimension(:), intent(inout) :: &
-        isosno, isoice ! mass of isotopes  (kg)
+        isosno,     & ! mass of isotopes  (kg)
+        isoice
+
+      real (kind=dbl_kind), dimension(:), intent(in) ::  &
+        fiso_atm,   & ! isotopic snowfall (kg/m^2/s of water)
+        Qref_iso      ! isotope reference humidity
+
+      real (kind=dbl_kind), intent(in) :: &
+        HDO_ocn,    & ! ocean concentration of HDO (kg/kg)
+        H2_16O_ocn, & ! ocean concentration of H2_16O (kg/kg)
+        H2_18O_ocn    ! ocean concentration of H2_18O (kg/kg)
 
 !  local variables
 
@@ -110,11 +109,11 @@
         hi,        &
         hs
 
-      real (kind=dbl_kind), dimension(n_iso) :: &
-        isotot, isotot0         ! for diagnostics 
+!      real (kind=dbl_kind), dimension(n_iso) :: &
+!        isotot, isotot0         ! for diagnostics
 
       real (kind=dbl_kind) :: &
-        hs_old, hi_old, dhs, dhi, sloss1, &
+        hs_old, hi_old, sloss1, &
         TsfK,      &           ! snow/ice temperature (K)
         alphai,    &           ! ice/vapour fractionation coefficient
         ratio,     &           ! isotopic ratio
@@ -160,7 +159,7 @@
       TsfK = Tsfc + Tffresh
 
       if (evaps > c0) then   ! condensation to snow
-         do k = 1, n_iso         
+         do k = 1, n_iso
             ratio = c1   ! ratio between 18O(HDO) and 16O in humidity
             alphai = c1  ! fractionation coefficient
             if (isotope_frac_method.ne.'nfrac' .and. Qref_iso(2)>puny) &
@@ -177,7 +176,7 @@
       endif
 
       if (evapi > c0) then   ! condensation to ice
-         do k = 1, n_iso         
+         do k = 1, n_iso
             ratio = c1 ! ratio between 18O(HDO) and 16O in ref humidity
             alphai = c1  ! fractionation coefficient
             if (isotope_frac_method.ne.'nfrac' .and. Qref_iso(2)>puny) &
@@ -197,6 +196,7 @@
 
       if (congel > c0) then
          do k = 1,n_iso
+           work = c0
            if (k == 1) then
               alpha = isoice_alpha(congel/dt,'HDO',isotope_frac_method)
               work = alpha*HDO_ocn*rhoi*congel*aicen
@@ -221,13 +221,13 @@
 ! sublimation of snow and ice
 
       if (evaps < c0) then   ! snow sublimation (no fractionation)
-         do k = 1, n_iso         
+         do k = 1, n_iso
             !ratio = c1 ! ratio between 18O(HDO) and 16O in snow
             !if (isosno(2) > puny) ratio = isosno(k)/isosno(2)
             !if (ratio > c5) ratio = c1   !! remove latter?
             !work = ratio*rhos*evaps*aicen
             !fiso_evapn(k) = fiso_evapn(k)+work/dt
-               
+
             sloss1 = c0
             if (dzsno > puny) sloss1 = isosno(k)*min(-evaps,dzsno)/dzsno
             if (isosno(k) >= sloss1) then
@@ -251,7 +251,7 @@
       endif
 
       if (evapi < c0) then   ! ice sublimation (no fractionation)
-         do k = 1, n_iso         
+         do k = 1, n_iso
             !!ratio = c1 ! ratio between 18O(HDO) and 16O in ice
             !!if (isoice(2) > puny) ratio = isoice(k)/isoice(2)
             !!if (ratio > c5) ratio = c1   ! remove later?
@@ -341,7 +341,7 @@
             endif
             fiso_ocnn(k) = fiso_ocnn(k) + sloss1/dt
          enddo
- 
+
          dzice = dzice - meltb
          if (dzice <= c0) then   ! ice ice melts away
             fiso_ocnn(:) = fiso_ocnn(:) + isoice(:)
@@ -392,7 +392,7 @@
 !            - fiso_evapn(k)*dt                       &
 !            + fiso_ocnn (k)*dt > 1e-6) then
 !            write(nu_diag,*) 'isotope tracer:    ',k
-!            write(nu_diag,*) 'isotot-isotot0     ',isotot(k)-isotot0(k) 
+!            write(nu_diag,*) 'isotot-isotot0     ',isotot(k)-isotot0(k)
 !            write(nu_diag,*) 'fiso_atm-fiso_ocnn ',fiso_atm  (k)*dt*aicen &
 !                                                 + fiso_evapn(k)*dt &
 !                                                 - fiso_ocnn (k)*dt
@@ -413,7 +413,7 @@
 
       function isoice_alpha(growth_rate, sp, frac)
 !
-! authors: Jiang Zhu, UW-Madison 
+! authors: Jiang Zhu, UW-Madison
 !
       real (kind=dbl_kind), intent(in) ::   &
          growth_rate                     ! sea-ice formation rate (m/s)
@@ -437,7 +437,7 @@
          isoice_alpha = 1.02120_dbl_kind
       if (frac == 'cfrac' .and. sp == 'H2_18O')         &
          isoice_alpha = 1.00291_dbl_kind
-         
+
       ! Eq.9, Toyota et al., 2013
       ! For HDO, 7.2852 = 0.2120/0.00291
       !--------------------------------------------------

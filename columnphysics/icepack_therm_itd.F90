@@ -7,33 +7,39 @@
 !       First icepack_therm_vertical computes vertical growth rates and coupler
 !       fluxes.  Then icepack_therm_itd does thermodynamic calculations not
 !       needed for coupling.
-!       
+!
 ! authors William H. Lipscomb, LANL
 !         C. M. Bitz, UW
 !         Elizabeth C. Hunke, LANL
 !
 ! 2003: Vectorized by Clifford Chen (Fujitsu) and William Lipscomb
-! 2004: Block structure added by William Lipscomb  
+! 2004: Block structure added by William Lipscomb
 ! 2006: Streamlined for efficiency by Elizabeth Hunke
 ! 2014: Column package created by Elizabeth Hunke
 !
       module icepack_therm_itd
 
       use icepack_kinds
+
+      use icepack_fsd, only: floe_rad_c, floe_binwidth
+
       use icepack_parameters, only: c0, c1, c2, c3, c4, c6, c10
       use icepack_parameters, only: p001, p1, p333, p5, p666, puny, bignum
       use icepack_parameters, only: rhos, rhoi, Lfresh, ice_ref_salinity
-      use icepack_parameters, only: phi_init, dsin0_frazil, hs_ssl, salt_loss
-      use icepack_parameters, only: rhosi, conserv_check, rhosmin
-      use icepack_parameters, only: kitd, ktherm, heat_capacity
-      use icepack_parameters, only: z_tracers, solve_zsal, hfrazilmin
+      use icepack_parameters, only: phi_init, dsin0_frazil, salt_loss
+      use icepack_parameters, only: Tliquidus_max
+      use icepack_parameters, only: rhosi, conserv_check, rhosmin, snwredist
+      use icepack_parameters, only: kitd, ktherm
+      use icepack_parameters, only: z_tracers, hfrazilmin, hi_min
+      use icepack_parameters, only: cpl_frazil, update_ocn_f, saltflux_option
+      use icepack_parameters, only: icepack_chkoptargflag
 
-      use icepack_tracers, only: ntrcr, nbtrcr
+      use icepack_tracers, only: ncat, nilyr, nslyr, nblyr, ntrcr, nbtrcr, nfsd
       use icepack_tracers, only: nt_qice, nt_qsno, nt_fbri, nt_sice
       use icepack_tracers, only: nt_apnd, nt_hpnd, nt_aero, nt_isosno, nt_isoice
-      use icepack_tracers, only: nt_Tsfc, nt_iage, nt_FY, nt_fsd, nt_rhos
+      use icepack_tracers, only: nt_Tsfc, nt_iage, nt_FY, nt_fsd, nt_rhos, nt_sice
       use icepack_tracers, only: nt_alvl, nt_vlvl
-      use icepack_tracers, only: tr_pond_cesm, tr_pond_lvl, tr_pond_topo, tr_snow
+      use icepack_tracers, only: tr_pond_lvl, tr_pond_topo
       use icepack_tracers, only: tr_iage, tr_FY, tr_lvl, tr_aero, tr_iso, tr_brine, tr_fsd
       use icepack_tracers, only: n_aero, n_iso
       use icepack_tracers, only: bio_index
@@ -41,23 +47,20 @@
       use icepack_warnings, only: warnstr, icepack_warnings_add
       use icepack_warnings, only: icepack_warnings_setabort, icepack_warnings_aborted
 
-      use icepack_fsd, only: fsd_weld_thermo, icepack_cleanup_fsd,  get_subdt_fsd    
+      use icepack_fsd, only: fsd_weld_thermo, icepack_cleanup_fsd,  get_subdt_fsd
       use icepack_itd, only: reduce_area, cleanup_itd
       use icepack_itd, only: aggregate_area, shift_ice
       use icepack_itd, only: column_sum, column_conservation_check
       use icepack_isotope, only: isoice_alpha, isotope_frac_method
-      use icepack_mushy_physics, only: liquidus_temperature_mush, enthalpy_mush
-      use icepack_therm_shared, only: hi_min
+      use icepack_mushy_physics, only: liquidus_temperature_mush, icepack_enthalpy_mush
       use icepack_zbgc, only: add_new_ice_bgc
-      use icepack_zbgc, only: lateral_melt_bgc               
- 
+      use icepack_zbgc, only: lateral_melt_bgc
+      use icepack_zbgc_shared, only: bgrid, cgrid, igrid
+
       implicit none
-      
+
       private
-      public :: linear_itd, &
-                add_new_ice, &
-                lateral_melt, &
-                icepack_step_therm2
+      public :: icepack_step_therm2
 
 !=======================================================================
 
@@ -88,24 +91,16 @@
 ! authors: William H. Lipscomb, LANL
 !          Elizabeth C. Hunke, LANL
 
-      subroutine linear_itd (ncat,        hin_max,     &
-                             nilyr,       nslyr,       &
-                             ntrcr,       trcr_depend, & 
+      subroutine linear_itd (hin_max,     trcr_depend, &
                              trcr_base,   n_trcr_strata,&
                              nt_strata,                &
-                             aicen_init,  vicen_init,  & 
-                             aicen,       trcrn,       & 
-                             vicen,       vsnon,       & 
-                             aice,        aice0,       & 
-                             fpond                     )
+                             aicen_init,  vicen_init,  &
+                             aicen,       trcrn,       &
+                             vicen,       vsnon,       &
+                             aice,        aice0,       &
+                             fpond,       Tf           )
 
-      integer (kind=int_kind), intent(in) :: &
-         ncat    , & ! number of thickness categories
-         nilyr   , & ! number of ice layers
-         nslyr   , & ! number of snow layers
-         ntrcr       ! number of tracers in use
-
-      real (kind=dbl_kind), dimension(0:ncat), intent(inout) :: &
+      real (kind=dbl_kind), dimension(0:ncat), intent(in) :: &
          hin_max      ! category boundaries (m)
 
       integer (kind=int_kind), dimension (:), intent(in) :: &
@@ -118,6 +113,9 @@
 
       integer (kind=int_kind), dimension (:,:), intent(in) :: &
          nt_strata      ! indices of underlying tracer layers
+
+      real (kind=dbl_kind), intent(in) :: &
+         Tf             ! freezing temperature
 
       real (kind=dbl_kind), dimension(:), intent(in) :: &
          aicen_init, & ! initial ice concentration (before vertical thermo)
@@ -184,7 +182,7 @@
          vbri_init, vbri_final    ! briny ice volume summed over categories
 
       ! NOTE: Third index of donor, daice, dvice should be ncat-1,
-      !       except that compilers would have trouble when ncat = 1 
+      !       except that compilers would have trouble when ncat = 1
       integer (kind=int_kind), dimension(ncat) :: &
          donor            ! donor category index
 
@@ -202,8 +200,6 @@
       !-----------------------------------------------------------------
       ! Initialize
       !-----------------------------------------------------------------
-
-      hin_max(ncat) = 999.9_dbl_kind ! arbitrary big number
 
       do n = 1, ncat
          donor(n) = 0
@@ -236,7 +232,7 @@
 
          if (tr_brine) then
             vbrin(n) = vbrin(n) + trcrn(nt_fbri,n) &
-                     * vicen(n)/real(nilyr,kind=dbl_kind)
+                     * vicen(n)
          endif
 
          do k = 1, nilyr
@@ -285,7 +281,7 @@
          endif               ! aicen_init > puny
 
          if (aicen (n) > puny) then
-             hicen (n) = vicen(n) / aicen(n) 
+             hicen (n) = vicen(n) / aicen(n)
              dhicen(n) = hicen(n) - hicen_init(n)
          else
              hicen (n) = c0
@@ -318,7 +314,7 @@
 
               write(warnstr,*) subname, &
                  'ITD Thermodynamics: hicen_init(n+1) <= hicen_init(n)'
-              call icepack_warnings_setabort(.true.)
+              call icepack_warnings_setabort(.true.,__FILE__,__LINE__)
               call icepack_warnings_add(warnstr)
 
             endif
@@ -465,7 +461,7 @@
                   aicen(1) = aicen(1) - da0
 
                   if (tr_pond_topo) &
-                     fpond = fpond - (da0 * trcrn(nt_apnd,1) & 
+                     fpond = fpond - (da0 * trcrn(nt_apnd,1) &
                                           * trcrn(nt_hpnd,1))
 
                endif            ! etamax > 0
@@ -536,7 +532,7 @@
                daice(n) = c0
                dvice(n) = c0
                donor(n) = 0
-            endif 
+            endif
 
             if (dvice(n) < vicen(nd)*puny) then
                daice(n) = c0
@@ -570,7 +566,7 @@
             enddo
          enddo
          ! maintain rhos_cmp positive definiteness
-         if (tr_snow) then
+         if (snwredist(1:3) == 'ITD') then
             do n = 1, ncat
                do k = nt_rhos, nt_rhos+nslyr-1
                   trcrn(k,n) = max(trcrn(k,n)-rhosmin, c0)
@@ -578,16 +574,15 @@
                enddo
             enddo
          endif
- 
-         call shift_ice (ntrcr,    ncat,        &
-                         trcr_depend,           &
+
+         call shift_ice (trcr_depend,           &
                          trcr_base,             &
                          n_trcr_strata,         &
                          nt_strata,             &
                          aicen,    trcrn,       &
                          vicen,    vsnon,       &
                          hicen,    donor,       &
-                         daice,    dvice        )
+                         daice,    dvice, Tf    )
          if (icepack_warnings_aborted(subname)) return
 
          ! maintain qsno negative definiteness
@@ -597,7 +592,7 @@
             enddo
          enddo
          ! maintain rhos_cmp positive definiteness
-         if (tr_snow) then
+         if (snwredist(1:3) == 'ITD') then
             do n = 1, ncat
                do k = nt_rhos, nt_rhos+nslyr-1
                   trcrn(k,n) = trcrn(k,n) + rhosmin
@@ -616,7 +611,7 @@
             hicen(1) = hi_min
 
             if (tr_pond_topo) &
-               fpond = fpond - (da0 * trcrn(nt_apnd,1) & 
+               fpond = fpond - (da0 * trcrn(nt_apnd,1) &
                                     * trcrn(nt_hpnd,1))
          endif
 
@@ -626,7 +621,7 @@
       ! Update fractional ice area in each grid cell.
       !-----------------------------------------------------------------
 
-      call aggregate_area (ncat, aicen, aice, aice0)
+      call aggregate_area (aicen, aice, aice0)
       if (icepack_warnings_aborted(subname)) return
 
       !-----------------------------------------------------------------
@@ -653,7 +648,7 @@
 
          if (tr_brine) then
             vbrin(n) = vbrin(n) + trcrn(nt_fbri,n) &
-                     * vicen(n)/real(nilyr,kind=dbl_kind)
+                     * vicen(n)
          endif
 
          do k = 1, nilyr
@@ -790,15 +785,12 @@
 
 !=======================================================================
 !
-! Given some added new ice to the base of the existing ice, recalculate 
-! vertical tracer so that new grid cells are all the same size. 
+! Given some added new ice to the base of the existing ice, recalculate
+! vertical tracer so that new grid cells are all the same size.
 !
 ! author: A. K. Turner, LANL
 !
-      subroutine update_vertical_tracers(nilyr, trc, h1, h2, trc0)
-
-      integer (kind=int_kind), intent(in) :: &
-         nilyr ! number of ice layers
+      subroutine update_vertical_tracers(trc, h1, h2, trc0)
 
       real (kind=dbl_kind), dimension(:), intent(inout) :: &
            trc ! vertical tracer
@@ -807,7 +799,7 @@
          h1, & ! old thickness
          h2, & ! new thickness
          trc0  ! tracer value of added ice on ice bottom
-           
+
       ! local variables
 
       real(kind=dbl_kind), dimension(nilyr) :: trc2 ! updated tracer temporary
@@ -841,7 +833,7 @@
               ! calculate upper and lower boundary of old cell
               z1a = ((k1 - 1) * h1) / rnilyr
               z1b = (k1       * h1) / rnilyr
-              
+
               ! calculate overlap between old and new cell
               overlap = max(min(z1b, z2b) - max(z1a, z2a), c0)
 
@@ -853,7 +845,7 @@
            ! calculate upper and lower boundary of added new ice at bottom
            z1a = h1
            z1b = h2
-           
+
            ! calculate overlap between added ice and new cell
            overlap = max(min(z1b, z2b) - max(z1a, z2a), c0)
            ! aggregate added ice contribution to new cell
@@ -877,33 +869,18 @@
 ! 2003:   Modified by William H. Lipscomb and Elizabeth C. Hunke, LANL
 ! 2016    Lettie Roach, NIWA/VUW, added floe size dependence
 !
-      subroutine lateral_melt (dt,         ncat,       &
-                               nilyr,      nslyr,      &
-                               n_aero,     &
-                               fpond,      &
+      subroutine lateral_melt (dt,         fpond,      &
                                fresh,      fsalt,      &
                                fhocn,      faero_ocn,  &
                                fiso_ocn,               &
-                               rside,      meltl,      &
-                               fside,      sss,        &
+                               rsiden,     meltl,      &
+                               wlat,                   &
                                aicen,      vicen,      &
                                vsnon,      trcrn,      &
-                               fzsal,      flux_bio,   &
-                               nbtrcr,     nblyr,      &
-                               nfsd,       d_afsd_latm,&
-                               floe_rad_c, floe_binwidth)
+                               flux_bio,   d_afsd_latm)
 
       real (kind=dbl_kind), intent(in) :: &
          dt        ! time step (s)
-
-      integer (kind=int_kind), intent(in) :: &
-         ncat    , & ! number of thickness categories
-         nfsd    , & ! number of floe size categories
-         nilyr   , & ! number of ice layers
-         nblyr   , & ! number of bio layers
-         nslyr   , & ! number of snow layers
-         n_aero  , & ! number of aerosol tracers
-         nbtrcr      ! number of bio tracers
 
       real (kind=dbl_kind), dimension (:), intent(inout) :: &
          aicen   , & ! concentration of ice
@@ -913,34 +890,30 @@
       real (kind=dbl_kind), dimension (:,:), intent(inout) :: &
          trcrn       ! tracer array
 
-      real (kind=dbl_kind), intent(in) :: &
-         rside   , & ! fraction of ice that melts laterally
-         fside       ! lateral heat flux (W/m^2)
+      real (kind=dbl_kind), dimension (:), intent(in) :: &
+         rsiden       ! fraction of ice that melts laterally
+
+      real (kind=dbl_kind), intent(in), optional :: &
+         wlat        ! lateral melt rate (m/s)
 
       real (kind=dbl_kind), intent(inout) :: &
          fpond     , & ! fresh water flux to ponds (kg/m^2/s)
          fresh     , & ! fresh water flux to ocean (kg/m^2/s)
          fsalt     , & ! salt flux to ocean (kg/m^2/s)
          fhocn     , & ! net heat flux to ocean (W/m^2)
-         meltl     , & ! lateral ice melt         (m/step-->cm/day)
-         fzsal         ! salt flux from zsalinity (kg/m2/s)
-  
-      real (kind=dbl_kind), dimension (:), intent(in) :: &
-         floe_rad_c     , & ! fsd size bin centre in m (radius)
-         floe_binwidth      ! fsd size bin width in m (radius)
+         meltl         ! lateral ice melt         (m/step-->cm/day)
 
-      real (kind=dbl_kind), dimension (:), intent(out) :: &
-         d_afsd_latm        ! change in fsd due to lateral melt (m)
-
-      real (kind=dbl_kind), dimension(nbtrcr), &
-         intent(inout) :: &
-         flux_bio  ! biology tracer flux from layer bgc (mmol/m^2/s)  
+      real (kind=dbl_kind), dimension(nbtrcr), intent(inout) :: &
+         flux_bio  ! biology tracer flux from layer bgc (mmol/m^2/s)
 
       real (kind=dbl_kind), dimension(:), intent(inout) :: &
          faero_ocn     ! aerosol flux to ocean (kg/m^2/s)
 
-      real (kind=dbl_kind), dimension(:), intent(inout) :: &
+      real (kind=dbl_kind), dimension(:), intent(inout), optional :: &
          fiso_ocn     ! isotope flux to ocean (kg/m^2/s)
+
+      real (kind=dbl_kind), dimension (:), intent(out), optional :: &
+         d_afsd_latm        ! change in fsd due to lateral melt (m)
 
       ! local variables
 
@@ -956,264 +929,203 @@
          dfsalt  , & ! change in fsalt
          dvssl   , & ! snow surface layer volume
          dvint   , & ! snow interior layer
-         cat1_arealoss, tmp !
-
-      logical (kind=log_kind) :: &
-         flag        ! .true. if there could be lateral melting
+         tmp
 
       real (kind=dbl_kind), dimension (ncat) :: &
          aicen_init, & ! initial area fraction
          vicen_init, & ! volume per unit area of ice (m)
-         G_radialn , & ! rate of lateral melt (m/s)
-         delta_an  , & ! change in the ITD
-         qin       , & ! enthalpy
-         rsiden        ! delta_an/aicen
+         vsnon_init, & ! volume per unit area of snow (m)
+         G_radialn     ! rate of lateral melt (m/s)
 
-      real (kind=dbl_kind), dimension (nfsd,ncat) :: &
+      real (kind=dbl_kind), dimension (:,:), allocatable :: &
          afsdn     , & ! floe size distribution tracer
          afsdn_init    ! initial value
 
-      real (kind=dbl_kind), dimension (nfsd) :: &
-         df_flx, &        ! finite difference for FSD
-         afsd_tmp, d_afsd_tmp
-
-      real (kind=dbl_kind), dimension(nfsd+1) :: &
+      real (kind=dbl_kind), dimension (:), allocatable :: &
+         df_flx    , & ! finite difference for FSD
+         afsd_tmp  , & !
+         d_afsd_tmp, & !
          f_flx         !
 
-!echmod - for average qin
-      real (kind=dbl_kind), intent(in) :: &
-         sss
       real (kind=dbl_kind) :: &
-         Ti, Si0, qi0, &
+         sicen,        &
+         etot,         & ! column energy per itd cat, for FSD code
          elapsed_t,    & ! FSD subcycling
          subdt           ! FSD timestep (s)
 
       character(len=*), parameter :: subname='(lateral_melt)'
 
-      flag = .false.
+      if (tr_fsd) d_afsd_latm = c0
+
+      if (.not. any(rsiden(:) > c0)) return  ! no lateral melt, get out now
+
       dfhocn   = c0
       dfpond   = c0
       dfresh   = c0
       dfsalt   = c0
       dvssl    = c0
       dvint    = c0
-      cat1_arealoss  = c0
-      tmp  = c0
-      vicen_init = c0
-      G_radialn  = c0
-      delta_an   = c0
-      qin        = c0
-      rsiden     = c0
-      afsdn      = c1
-      afsdn_init = c0
-      df_flx     = c0
-      f_flx      = c0
+      vicen_init(:) = vicen(:)
+      vsnon_init(:) = vsnon(:)
 
       if (tr_fsd) then
-         call icepack_cleanup_fsd (ncat, nfsd, trcrn(nt_fsd:nt_fsd+nfsd-1,:)) 
+         call icepack_cleanup_fsd (trcrn(nt_fsd:nt_fsd+nfsd-1,:))
          if (icepack_warnings_aborted(subname)) return
-         
-         afsdn = trcrn(nt_fsd:nt_fsd+nfsd-1,:)
-         aicen_init = aicen
-         afsdn_init = afsdn ! for diagnostics
-         d_afsd_latm(:) = c0
+
+         allocate(afsdn(nfsd,ncat))
+         allocate(afsdn_init(nfsd,ncat))
+         allocate(df_flx(nfsd))
+         allocate(afsd_tmp(nfsd))
+         allocate(d_afsd_tmp(nfsd))
+         allocate(f_flx(nfsd+1))
+
+         aicen_init  = aicen
+         afsdn       = trcrn(nt_fsd:nt_fsd+nfsd-1,:)
+         afsdn_init  = afsdn ! for diagnostics
+         df_flx      = c0
+         f_flx       = c0
       end if
 
-      if (tr_fsd .and. fside < c0) then
-         flag = .true.
-
-
-! echmod - using category values would be preferable to the average value
-         ! Compute average enthalpy of ice (taken from add_new_ice)
-         if (sss > c2 * dSin0_frazil) then
-            Si0 = sss - dSin0_frazil
-         else
-            Si0 = sss**2 / (c4*dSin0_frazil)
-         endif
-         Ti = min(liquidus_temperature_mush(Si0/phi_init), -p1)
-         qi0 = enthalpy_mush(Ti, Si0)
-
-         do n = 1, ncat
-            if (ktherm == 2) then  ! mushy
-               do k = 1, nilyr
-                  !qin(n) = qin(n) &
-                  !       + trcrn(nt_qice+k-1,n)*vicen(n)/real(nilyr,kind=dbl_kind)
-                  qin(n) = qi0
-               enddo
-            else
-               qin(n) = -rhoi*Lfresh
-            endif
-
-            if (qin(n) < -puny) G_radialn(n) = -fside/qin(n) ! negative
-
-            if (G_radialn(n) < -puny) then
-
-               
-               if (any(afsdn(:,n) < c0)) print*,&
-                 'lateral_melt B afsd < 0',n
-
-               cat1_arealoss = -trcrn(nt_fsd+1-1,n) * aicen(n) * dt &
-                             * G_radialn(n) / floe_binwidth(1)
-
-               delta_an(n) = c0
-               do k = 1, nfsd
-                  delta_an(n) = delta_an(n) + ((c2/floe_rad_c(k))*aicen(n) &
-                                            * trcrn(nt_fsd+k-1,n)*G_radialn(n)*dt) ! delta_an < 0
-               end do
-
-               ! add negative area loss from fsd
-               delta_an(n) = delta_an(n) - cat1_arealoss
-
-               if (delta_an(n) > c0) print*,'ERROR delta_an > 0', delta_an(n)
- 
-               ! following original code, not necessary for fsd
-               if (aicen(n) > c0) rsiden(n) = MIN(-delta_an(n)/aicen(n),c1)
-
-               if (rsiden(n) < c0) print*,'ERROR rsiden < 0', rsiden(n)
-
-            end if ! G_radialn
-         enddo ! ncat
-
-      else if (rside > c0) then ! original, non-fsd implementation
-
-         flag = .true.
-         rsiden(:) = rside ! initialize
-
-      endif
-
-      if (flag) then ! grid cells with lateral melting.
-
-         do n = 1, ncat
+      do n = 1, ncat
 
       !-----------------------------------------------------------------
       ! Melt the ice and increment fluxes.
       !-----------------------------------------------------------------
 
-            ! fluxes to coupler
-            ! dfresh > 0, dfsalt > 0, dfpond > 0
+         ! fluxes to coupler
+         ! dfresh > 0, dfsalt > 0, dfpond > 0
 
-            dfresh = (rhoi*vicen(n) + rhos*vsnon(n))      * rsiden(n) / dt
-            dfsalt =  rhoi*vicen(n)*ice_ref_salinity*p001 * rsiden(n) / dt
-            fresh  = fresh + dfresh
-            fsalt  = fsalt + dfsalt
+         dfresh = (rhoi*vicen(n) + rhos*vsnon(n))      * rsiden(n) / dt
+         if (saltflux_option == 'prognostic') then
+            sicen = c0
+            do k=1,nilyr
+               sicen = sicen + trcrn(nt_sice+k-1,n) / real(nilyr,kind=dbl_kind)
+            enddo
+            dfsalt = rhoi*vicen(n)*sicen*p001 * rsiden(n) / dt
+         else
+            dfsalt = rhoi*vicen(n)*ice_ref_salinity*p001 * rsiden(n) / dt
+         endif
+         fresh  = fresh + dfresh
+         fsalt  = fsalt + dfsalt
 
-            if (tr_pond_topo) then
-               dfpond = aicen(n)*trcrn(nt_apnd,n)*trcrn(nt_hpnd,n)*rsiden(n)
-               fpond  = fpond - dfpond
-            endif
+         if (tr_pond_topo) then
+            dfpond = aicen(n)*trcrn(nt_apnd,n)*trcrn(nt_hpnd,n)*rsiden(n)
+            fpond  = fpond - dfpond
+         endif
 
-            ! history diagnostics
-            meltl = meltl + vicen(n)*rsiden(n)
+         ! history diagnostics
+         meltl = meltl + vicen_init(n)*rsiden(n)
 
-            ! state variables
-            vicen_init(n) = vicen(n)
-            aicen(n) = aicen(n) * (c1 - rsiden(n))
-            vicen(n) = vicen(n) * (c1 - rsiden(n))
-            vsnon(n) = vsnon(n) * (c1 - rsiden(n))
+         ! state variables
+         aicen(n) = aicen(n) * (c1 - rsiden(n))
+         vicen(n) = vicen(n) * (c1 - rsiden(n))
+         vsnon(n) = vsnon(n) * (c1 - rsiden(n))
 
-            ! floe size distribution
-            if (tr_fsd) then
-               if (rsiden(n) > puny) then
-                  if (aicen(n) > puny) then
+         ! floe size distribution
+         if (tr_fsd) then
+            if (rsiden(n) > puny) then
+               if (aicen(n) > puny) then
 
-                     ! adaptive subtimestep
-                     elapsed_t = c0
-                     afsd_tmp(:) = afsdn_init(:,n)
-                     d_afsd_tmp(:) = c0
-                     nsubt = 0
+                  ! adaptive subtimestep
+                  elapsed_t = c0
+                  afsd_tmp(:) = afsdn_init(:,n)
+                  d_afsd_tmp(:) = c0
+                  nsubt = 0
 
-                     DO WHILE (elapsed_t.lt.dt)
+                  DO WHILE (elapsed_t.lt.dt)
 
-                         nsubt = nsubt + 1
-                         if (nsubt.gt.100) &
-                           print *, 'latm not converging'
-                     
-                         ! finite differences
-                         df_flx(:) = c0
-                         f_flx (:) = c0
-                         do k = 2, nfsd
-                           f_flx(k) =  G_radialn(n) * afsd_tmp(k) / floe_binwidth(k)
-                         end do
+                     nsubt = nsubt + 1
+                     if (nsubt.gt.100) then
+                        write(warnstr,*) subname, 'latm not converging'
+                        call icepack_warnings_add(warnstr)
+                     endif
 
-                         do k = 1, nfsd
-                          df_flx(k)   = f_flx(k+1) - f_flx(k) 
-                         end do
+                     ! finite differences
+                     df_flx(:) = c0
+                     f_flx (:) = c0
+                     G_radialn(n) = -wlat
+                     do k = 2, nfsd
+                        f_flx(k) =  G_radialn(n) * afsd_tmp(k) / floe_binwidth(k)
+                     end do
 
-                         if (abs(sum(df_flx(:))) > puny) &
-                           print*,'sum(df_flx)/=0'
+                     do k = 1, nfsd
+                        df_flx(k)   = f_flx(k+1) - f_flx(k)
+                     end do
 
-                         ! this term ensures area conservation
-                         tmp = SUM(afsd_tmp(:)/floe_rad_c(:))
-                        
-                         ! fsd tendency
-                         do k = 1, nfsd
-                           d_afsd_tmp(k) = -df_flx(k) + c2 * G_radialn(n) * afsd_tmp(k) &
-                                       * (c1/floe_rad_c(k) - tmp)
-                         end do
+                     if (abs(sum(df_flx(:))) > puny) then
+                        write(warnstr,*) subname, 'sum(df_flx) /= 0'
+                        call icepack_warnings_add(warnstr)
+                     endif
 
-                         ! timestep required for this
-                         subdt = get_subdt_fsd(nfsd, afsd_tmp(:), d_afsd_tmp(:))
-                         subdt = MIN(subdt, dt)
+                     ! this term ensures area conservation
+                     tmp = SUM(afsd_tmp(:)/floe_rad_c(:))
 
-                        ! update fsd and elapsed time
-                        afsd_tmp(:) = afsd_tmp(:) + subdt*d_afsd_tmp(:)
-                        elapsed_t = elapsed_t + subdt
+                     ! fsd tendency
+                     do k = 1, nfsd
+                        d_afsd_tmp(k) = -df_flx(k) + c2 * G_radialn(n) * afsd_tmp(k) &
+                             * (c1/floe_rad_c(k) - tmp)
+                     end do
 
+                     ! timestep required for this
+                     subdt = get_subdt_fsd(afsd_tmp(:), d_afsd_tmp(:))
+                     subdt = MIN(subdt, dt)
 
-                      END DO
- 
-                     afsdn(:,n) = afsd_tmp(:)
+                     ! update fsd and elapsed time
+                     afsd_tmp(:) = afsd_tmp(:) + subdt*d_afsd_tmp(:)
+                     elapsed_t = elapsed_t + subdt
 
-      
-                  end if ! aicen
-               end if ! rside > 0, otherwise do nothing
+                  END DO
 
-            end if ! tr_fsd
+                  afsdn(:,n) = afsd_tmp(:)
 
-            ! fluxes
-            do k = 1, nilyr
-               ! enthalpy tracers do not change (e/v constant)
-               ! heat flux to coupler for ice melt (dfhocn < 0)
-               dfhocn = trcrn(nt_qice+k-1,n)*rsiden(n) / dt &
-                      * vicen(n)/real(nilyr,kind=dbl_kind)
-               fhocn  = fhocn + dfhocn
-            enddo                  ! nilyr
+               end if ! aicen
+            end if ! rside > 0, otherwise do nothing
 
-            do k = 1, nslyr
-               ! heat flux to coupler for snow melt (dfhocn < 0)
-               dfhocn = trcrn(nt_qsno+k-1,n)*rsiden(n) / dt &
-                      * vsnon(n)/real(nslyr,kind=dbl_kind)
-               fhocn  = fhocn + dfhocn
-            enddo                  ! nslyr
+         end if ! tr_fsd
 
-            if (tr_aero) then
-               do k = 1, n_aero
-                  faero_ocn(k) = faero_ocn(k) + (vsnon(n) &
-                               *(trcrn(nt_aero  +4*(k-1),n)   &
-                               + trcrn(nt_aero+1+4*(k-1),n))  &
-                                              +  vicen(n) &
-                               *(trcrn(nt_aero+2+4*(k-1),n)   &
-                               + trcrn(nt_aero+3+4*(k-1),n))) &
-                               * rsiden(n) / dt
-               enddo ! k
-            endif    ! tr_aero
+         ! fluxes
+         do k = 1, nilyr
+            ! enthalpy tracers do not change (e/v constant)
+            ! heat flux to coupler for ice melt (dfhocn < 0)
+            dfhocn = trcrn(nt_qice+k-1,n)*rsiden(n) / dt &
+                 * vicen_init(n)/real(nilyr,kind=dbl_kind)
+            fhocn  = fhocn + dfhocn
+         enddo                  ! nilyr
 
-            if (tr_iso) then
-               do k = 1, n_iso
-                  fiso_ocn(k) = fiso_ocn(k) &
-                              + (vsnon(n)*trcrn(nt_isosno+k-1,n) &
-                              +  vicen(n)*trcrn(nt_isoice+k-1,n)) &
-                              * rside / dt
-               enddo ! k
-            endif    ! tr_iso
+         do k = 1, nslyr
+            ! heat flux to coupler for snow melt (dfhocn < 0)
+            dfhocn = trcrn(nt_qsno+k-1,n)*rsiden(n) / dt &
+                 * vsnon_init(n)/real(nslyr,kind=dbl_kind)
+            fhocn  = fhocn + dfhocn
+         enddo                  ! nslyr
+
+         if (tr_aero) then
+            do k = 1, n_aero
+               faero_ocn(k) = faero_ocn(k) &
+                            + (vsnon_init(n) * (trcrn(nt_aero  +4*(k-1),n)   &
+                                             +  trcrn(nt_aero+1+4*(k-1),n))  &
+                            +  vicen_init(n) * (trcrn(nt_aero+2+4*(k-1),n)   &
+                                             +  trcrn(nt_aero+3+4*(k-1),n))) &
+                            * rsiden(n) / dt
+            enddo ! k
+         endif    ! tr_aero
+
+         if (tr_iso) then
+            do k = 1, n_iso
+               fiso_ocn(k) = fiso_ocn(k) &
+                           + (vsnon_init(n)*trcrn(nt_isosno+k-1,n)  &
+                           +  vicen_init(n)*trcrn(nt_isoice+k-1,n)) &
+                           * rsiden(n) / dt
+            enddo ! k
+         endif    ! tr_iso
 
       !-----------------------------------------------------------------
       ! Biogeochemistry
-      !-----------------------------------------------------------------     
+      !-----------------------------------------------------------------
 
             if (z_tracers) then   ! snow tracers
-               dvssl = min(p5*vsnon(n)/real(nslyr,kind=dbl_kind), hs_ssl*aicen(n)) ! snow surface layer
-               dvint = vsnon(n) - dvssl                                            ! snow interior
+               dvssl = p5*vsnon_init(n)/real(nslyr,kind=dbl_kind) ! snow surface layer
+               dvint = vsnon_init(n) - dvssl                      ! snow interior
                do k = 1, nbtrcr
                   flux_bio(k) = flux_bio(k) &
                               + (trcrn(bio_index(k)+nblyr+1,n)*dvssl  &
@@ -1224,30 +1136,37 @@
 
          enddo       ! n
 
-         if (solve_zsal .or. z_tracers) &
+         if (z_tracers) &
             call lateral_melt_bgc(dt,                         &
-                                  ncat,        nblyr,         &
-                                  rside,       vicen_init,    &  !echmod: use rsiden
-                                  trcrn,       fzsal,         &
-                                  flux_bio,    nbtrcr)
+                                  rsiden,      vicen_init,    &
+                                  trcrn,       flux_bio)
             if (icepack_warnings_aborted(subname)) return
 
-      endif          ! flag
 
-      if (tr_fsd) then
+            if (tr_fsd) then
 
-         call icepack_cleanup_fsd (ncat, nfsd, trcrn(nt_fsd:nt_fsd+nfsd-1,:) )
-         if (icepack_warnings_aborted(subname)) return
+               trcrn(nt_fsd:nt_fsd+nfsd-1,:) =  afsdn
 
-         ! diagnostics
-         do k = 1, nfsd
-            d_afsd_latm(k) = c0
-            do n = 1, ncat
-               d_afsd_latm(k) = d_afsd_latm(k) &
-                  + afsdn(k,n)*aicen(n) - afsdn_init(k,n)*aicen_init(n)
-            end do
-         end do
-      end if
+               call icepack_cleanup_fsd (trcrn(nt_fsd:nt_fsd+nfsd-1,:) )
+               if (icepack_warnings_aborted(subname)) return
+
+               ! diagnostics
+               do k = 1, nfsd
+                  d_afsd_latm(k) = c0
+                  do n = 1, ncat
+                     d_afsd_latm(k) = d_afsd_latm(k) &
+                          + afsdn(k,n)*aicen(n) - afsdn_init(k,n)*aicen_init(n)
+                  end do
+               end do
+
+               deallocate(afsdn)
+               deallocate(afsdn_init)
+               deallocate(df_flx)
+               deallocate(afsd_tmp)
+               deallocate(d_afsd_tmp)
+               deallocate(f_flx)
+
+            end if
 
       end subroutine lateral_melt
 
@@ -1272,24 +1191,19 @@
 !          Adrian Turner, LANL
 !          Lettie Roach, NIWA/VUW
 !
-      subroutine add_new_ice (ncat,      nilyr,      &
-                              nfsd,      nblyr,      &
-                              n_aero,    dt,         &
-                              ntrcr,     nltrcr,     &
+      subroutine add_new_ice (dt,         &
                               hin_max,   ktherm,     &
                               aicen,     trcrn,      &
-                              vicen,     vsnon1,     &
+                              vicen,                 &
                               aice0,     aice,       &
                               frzmlt,    frazil,     &
                               frz_onset, yday,       &
-                              update_ocn_f,          &
                               fresh,     fsalt,      &
                               Tf,        sss,        &
                               salinz,    phi_init,   &
                               dSin0_frazil,          &
-                              bgrid,      cgrid,      igrid,    &
-                              nbtrcr,    flux_bio,   &
-                              ocean_bio, fzsal,      &
+                              flux_bio,   &
+                              ocean_bio,             &
                               frazil_diag,           &
                               fiso_ocn,              &
                               HDO_ocn, H2_16O_ocn,   &
@@ -1299,20 +1213,12 @@
                               wavefreq,              &
                               dwavefreq,             &
                               d_afsd_latg,           &
-                              d_afsd_newi,           &
-                              floe_rad_c, floe_binwidth)
+                              d_afsd_newi)
 
       use icepack_fsd, only: fsd_lateral_growth, fsd_add_new_ice
 
       integer (kind=int_kind), intent(in) :: &
-         ncat  , & ! number of thickness categories
-         nfsd  , & ! number of floe size categories
-         nilyr , & ! number of ice layers
-         nblyr , & ! number of bio layers
-         ntrcr , & ! number of tracers
-         nltrcr, & ! number of zbgc tracers
-         n_aero, & ! number of aerosol tracers
-         ktherm    ! type of thermodynamics (0 0-layer, 1 BL99, 2 mushy)
+         ktherm    ! type of thermodynamics (-1 none, 1 BL99, 2 mushy)
 
       real (kind=dbl_kind), dimension(0:ncat), intent(in) :: &
          hin_max      ! category boundaries (m)
@@ -1322,8 +1228,7 @@
          aice  , & ! total concentration of ice
          frzmlt, & ! freezing/melting potential (W/m^2)
          Tf    , & ! freezing temperature (C)
-         sss   , & ! sea surface salinity (ppt)
-         vsnon1    ! category 1 snow volume per ice area (m)
+         sss       ! sea surface salinity (ppt)
 
       real (kind=dbl_kind), dimension (:), intent(inout) :: &
          aicen , & ! concentration of ice
@@ -1353,63 +1258,36 @@
          phi_init     , & ! initial frazil liquid fraction
          dSin0_frazil     ! initial frazil bulk salinity reduction from sss
 
-      logical (kind=log_kind), intent(in) :: &
-         update_ocn_f ! if true, update fresh water and salt fluxes
-
       ! BGC
-      real (kind=dbl_kind), dimension (nblyr+2), intent(in) :: &
-         bgrid              ! biology nondimensional vertical grid points
-
-      real (kind=dbl_kind), dimension (nblyr+1), intent(in) :: &
-         igrid              ! biology vertical interface points
- 
-      real (kind=dbl_kind), dimension (nilyr+1), intent(in) :: &
-         cgrid              ! CICE vertical coordinate   
-
-      integer (kind=int_kind), intent(in) :: &
-         nbtrcr          ! number of biology tracers
 
       real (kind=dbl_kind), dimension (:), intent(inout) :: &
-         flux_bio   ! tracer flux to ocean from biology (mmol/m^2/s) 
-        
+         flux_bio   ! tracer flux to ocean from biology (mmol/m^2/s)
+
       real (kind=dbl_kind), dimension (:), intent(in) :: &
          ocean_bio   ! ocean concentration of biological tracer
 
-      ! zsalinity
-      real (kind=dbl_kind),  intent(inout) :: &
-         fzsal      ! salt flux to ocean from zsalinity (kg/m^2/s)
-
       ! water isotopes
 
-      real (kind=dbl_kind), dimension(:), intent(inout) :: &
+      real (kind=dbl_kind), dimension(:), intent(inout), optional :: &
          fiso_ocn       ! isotope flux to ocean  (kg/m^2/s)
 
-      real (kind=dbl_kind), intent(in) :: &
+      real (kind=dbl_kind), intent(in), optional :: &
          HDO_ocn    , & ! ocean concentration of HDO (kg/kg)
          H2_16O_ocn , & ! ocean concentration of H2_16O (kg/kg)
          H2_18O_ocn     ! ocean concentration of H2_18O (kg/kg)
 
       ! floe size distribution
-      real (kind=dbl_kind), intent(in) :: &
+      real (kind=dbl_kind), intent(in), optional :: &
          wave_sig_ht    ! significant height of waves globally (m)
 
-      real (kind=dbl_kind), dimension(:), intent(in)  :: &
+      real (kind=dbl_kind), dimension(:), intent(in), optional :: &
          wave_spectrum  ! ocean surface wave spectrum, E(f) (m^2 s)
 
-      real(kind=dbl_kind), dimension(:), intent(in) :: &
+      real(kind=dbl_kind), dimension(:), intent(in), optional :: &
          wavefreq,              & ! wave frequencies (s^-1)
          dwavefreq                ! wave frequency bin widths (s^-1)
 
-      real (kind=dbl_kind), dimension (:), intent(in) :: &
-         floe_rad_c     , & ! fsd size bin centre in m (radius)
-         floe_binwidth      ! fsd size bin width in m (radius)
-
-      real (kind=dbl_kind), dimension(ncat) :: &  ! for now
-                            ! change in thickness distribution (area)
-         d_an_latg      , & ! due to fsd lateral growth
-         d_an_newi          ! new ice formation
-
-      real (kind=dbl_kind), dimension(:), intent(out) :: &
+      real (kind=dbl_kind), dimension(:), intent(out), optional :: &
                             ! change in thickness distribution (area)
          d_afsd_latg    , & ! due to fsd lateral growth
          d_afsd_newi        ! new ice formation
@@ -1425,7 +1303,6 @@
       real (kind=dbl_kind) :: &
          ai0new       , & ! area of new ice added to cat 1
          vi0new       , & ! volume of new ice added to cat 1
-         vi0new_lat   , & ! volume of new ice added laterally to fsd
          hsurp        , & ! thickness of new ice added to each cat
          fnew         , & ! heat flx to open water for new ice (W/m^2)
          hi0new       , & ! thickness of new ice
@@ -1459,11 +1336,16 @@
          vicen_init       ! volume per unit area of ice (m)
 
       ! floe size distribution
-      real (kind=dbl_kind), dimension (nfsd,ncat) :: &
+      real (kind=dbl_kind), dimension (:,:), allocatable :: &
          afsdn          ! floe size distribution tracer (originally areal_mfstd_init)
 
 !      real (kind=dbl_kind), dimension (nfsd) :: &
 !         afsd      , & ! fsd tracer for each thickness category
+
+      real (kind=dbl_kind), dimension(ncat) :: &  ! for now
+                            ! change in thickness distribution (area)
+         d_an_latg      , & ! due to fsd lateral growth
+         d_an_newi          ! new ice formation
 
       real (kind=dbl_kind), dimension (ncat) :: &
          d_an_tot, & ! change in the ITD due to lateral growth and new ice
@@ -1472,11 +1354,7 @@
       real (kind=dbl_kind), dimension (ncat) :: &
          vin0new          ! volume of new ice added to any thickness cat
 
-      real (kind=dbl_kind), dimension (nfsd) :: &
-         afsd_ni      ! areal mFSTD after new ice added
-
       real (kind=dbl_kind) :: &
-         tmp, &
          latsurf_area, & ! fractional area of ice on sides of floes
          lead_area   , & ! fractional area of ice in lead region
          G_radial    , & ! lateral melt rate (m/s)
@@ -1492,7 +1370,6 @@
       hsurp  = c0
       hi0new = c0
       ai0new = c0
-      afsdn(:,:) = c0
       d_an_latg(:) = c0
       d_an_tot(:) = c0
       d_an_newi(:) = c0
@@ -1515,7 +1392,9 @@
       endif
 
       if (tr_fsd) then
-         call icepack_cleanup_fsd (ncat, nfsd, trcrn(nt_fsd:nt_fsd+nfsd-1,:))
+         allocate(afsdn(nfsd,ncat))
+         afsdn(:,:) = c0
+         call icepack_cleanup_fsd (trcrn(nt_fsd:nt_fsd+nfsd-1,:))
          if (icepack_warnings_aborted(subname)) return
       endif
 
@@ -1562,8 +1441,8 @@
          do k = 1, nilyr
             Sprofile(k) = Si0new
          enddo
-         Ti = min(liquidus_temperature_mush(Si0new/phi_init), -p1)
-         qi0new = enthalpy_mush(Ti, Si0new)
+         Ti = min(liquidus_temperature_mush(Si0new/phi_init), Tliquidus_max)
+         qi0new = icepack_enthalpy_mush(Ti, Si0new)
       else
          do k = 1, nilyr
             Sprofile(k) = salinz(k)
@@ -1587,7 +1466,6 @@
 
       ! history diagnostics
       frazil = vi0new
-      if (solve_zsal) fzsal = fzsal - rhosi*vi0new/dt*p001*sss*salt_loss
 
       if (present(frz_onset) .and. present(yday)) then
          if (frazil > puny .and. frz_onset < puny) frz_onset = yday
@@ -1600,24 +1478,29 @@
       !       is NOT included in fluxes fresh and fsalt.
       !-----------------------------------------------------------------
 
-      if (update_ocn_f) then
-         if (ktherm <= 1) then
-            dfresh = -rhoi*vi0new/dt 
-            dfsalt = ice_ref_salinity*p001*dfresh
-            fresh  = fresh + dfresh
-            fsalt  = fsalt + dfsalt
-         ! elseif (ktherm == 2) the fluxes are added elsewhere
-         endif
-      else ! update_ocn_f = false
-         if (ktherm == 2) then ! return mushy-layer frazil to ocean (POP)
-            vi0tmp = fnew*dt / (rhoi*Lfresh)
+      dfresh = c0
+      dfsalt = c0
+      if (cpl_frazil == 'external') then
+         ! do nothing here, calculations are in the coupler or elsewhere
+      else
+         if (update_ocn_f) then
+            dfresh = -rhoi*vi0new/dt
+         elseif (cpl_frazil == 'fresh_ice_correction' .and. ktherm == 2) then
+            ! correct frazil fluxes for mushy
+            vi0tmp = fnew*dt / (rhoi*Lfresh) ! ocn/cpl assumes frazil volume is pure, fresh ice
             dfresh = -rhoi*(vi0new - vi0tmp)/dt
-            dfsalt = ice_ref_salinity*p001*dfresh
-            fresh  = fresh + dfresh
-            fsalt  = fsalt + dfsalt
             frazil_diag = frazil - vi0tmp
-         ! elseif ktherm==1 do nothing
+!        else
+!           do nothing - other correction options could be implemented in the future
          endif
+
+         if (saltflux_option == 'prognostic') then
+            dfsalt = Si0new*p001*dfresh
+         else
+            dfsalt = ice_ref_salinity*p001*dfresh
+         endif
+         fresh  = fresh + dfresh
+         fsalt  = fsalt + dfsalt
       endif
 
       !-----------------------------------------------------------------
@@ -1626,19 +1509,37 @@
 
       if (vi0new > c0) then
 
-        if (tr_fsd) & ! lateral growth of existing ice
+        if (tr_fsd) then ! lateral growth of existing ice
             ! calculate change in conc due to lateral growth
             ! update vi0new, without change to afsdn or aicen
-            call fsd_lateral_growth (ncat,       nfsd,         &
-                                  dt,         aice,         &
+            call fsd_lateral_growth(dt,       aice,         &
                                   aicen,      vicen,        &
                                   vi0new,     frazil,       &
-                                  floe_rad_c, afsdn,        &
+                                  afsdn,        &
                                   lead_area,  latsurf_area, &
                                   G_radial,   d_an_latg,    &
                                   tot_latg)
+            if (icepack_warnings_aborted(subname)) return
 
-         if (icepack_warnings_aborted(subname)) return
+            ! volume added to each category from lateral growth
+            do n = 1, ncat
+               if (aicen(n) > puny) then
+                   vin0new(n) = d_an_latg(n) * vicen(n)/aicen(n)
+               endif
+            end do
+
+            ! check lateral growth doesn't exceed total growth
+            ! if it does, adjust it
+            if (SUM(vin0new)>vi0new) then
+                write(warnstr,*) subname,'lateral growth warning ',vi0new,SUM(vin0new)
+                call icepack_warnings_add(warnstr)
+                vin0new(:) = vin0new(:)*vi0new/SUM(vin0new)
+            end if
+
+            vi0new = vi0new - SUM(vin0new)
+            frazil = frazil - SUM(vin0new)
+
+         endif
 
          ai0mod = aice0
          ! separate frazil ice growth from lateral ice growth
@@ -1664,11 +1565,6 @@
             vi0new = c0
          endif               ! aice0 > puny
 
-         ! volume added to each category from lateral growth
-         do n = 1, ncat
-            if (aicen(n) > c0) vin0new(n) = d_an_latg(n) * vicen(n)/aicen(n)
-         end do
-
          ! combine areal change from new ice growth and lateral growth
          d_an_newi(1)     = ai0new
          d_an_tot(2:ncat) = d_an_latg(2:ncat)
@@ -1690,7 +1586,7 @@
       !
       ! The mushy formulation (ktherm=2) puts the new ice only at the
       ! bottom of existing ice and adjusts the layers accordingly.
-      ! The other formulations distribute the new ice throughout the 
+      ! The other formulations distribute the new ice throughout the
       ! existing ice column.
       !-----------------------------------------------------------------
 
@@ -1721,14 +1617,14 @@
                enddo
             endif
 
-           frazil_conc = c0
            if (tr_iso .and. vtmp > puny) then
              do it=1,n_iso
-               if (it==1)   &
+               frazil_conc = c0
+               if (it==1) &
                   frazil_conc = isoice_alpha(c0,'HDO'   ,isotope_frac_method)*HDO_ocn
-               if (it==2)   &
+               if (it==2) &
                   frazil_conc = isoice_alpha(c0,'H2_16O',isotope_frac_method)*H2_16O_ocn
-               if (it==3)   &
+               if (it==3) &
                   frazil_conc = isoice_alpha(c0,'H2_18O',isotope_frac_method)*H2_18O_ocn
 
                ! dilution and uptake in the ice
@@ -1749,11 +1645,11 @@
                vsurp = hsurp * aicen(n)  ! note - save this above?
                vtmp = vicen(n) - vsurp   ! vicen is the new volume
                if (vicen(n) > c0) then
-                  call update_vertical_tracers(nilyr, &
+                  call update_vertical_tracers( &
                               trcrn(nt_qice:nt_qice+nilyr-1,n), &
                               vtmp, vicen(n), qi0new)
                   if (icepack_warnings_aborted(subname)) return
-                  call update_vertical_tracers(nilyr, &
+                  call update_vertical_tracers( &
                               trcrn(nt_sice:nt_sice+nilyr-1,n), &
                               vtmp, vicen(n), Si0new)
                   if (icepack_warnings_aborted(subname)) return
@@ -1768,9 +1664,8 @@
                      trcrn(nt_qice+k-1,n) = &
                     (trcrn(nt_qice+k-1,n)*vtmp + qi0new*vsurp) / vicen(n)
                      ! salinity
-                     if (.not. solve_zsal) & 
                      trcrn(nt_sice+k-1,n) = &
-                    (trcrn(nt_sice+k-1,n)*vtmp + Sprofile(k)*vsurp) / vicen(n) 
+                    (trcrn(nt_sice+k-1,n)*vtmp + Sprofile(k)*vsurp) / vicen(n)
                   endif
                enddo               ! k
             endif                  ! ktherm
@@ -1790,7 +1685,6 @@
 
       ncats = 1                  ! add new ice to category 1 by default
       if (tr_fsd) ncats = ncat   ! add new ice laterally to all categories
-  
 
       do n = 1, ncats
 
@@ -1800,7 +1694,7 @@
          vice1    = vicen(n)   ! save
          area2(n) = aicen_init(n) + d_an_latg(n) ! save area after latg, before newi
          aicen(n) = aicen(n) + d_an_tot(n) ! after lateral growth and new ice growth
- 
+
          aice0    = aice0    - d_an_tot(n)
          vicen(n) = vicen(n) + vin0new(n)
 
@@ -1812,12 +1706,11 @@
             trcrn(nt_FY,n) = min(trcrn(nt_FY,n), c1)
          endif
 
-         if (tr_fsd) & ! evolve the floe size distribution
+         if (tr_fsd) then ! evolve the floe size distribution
             ! both new frazil ice and lateral growth
-            call fsd_add_new_ice (ncat, n,    nfsd,          &
+            call fsd_add_new_ice (n,                         &
                                   dt,         ai0new,        &
                                   d_an_latg,  d_an_newi,     &
-                                  floe_rad_c, floe_binwidth, &
                                   G_radial,   area2,         &
                                   wave_sig_ht,               &
                                   wave_spectrum,             &
@@ -1827,9 +1720,9 @@
                                   d_afsd_newi,               &
                                   afsdn,      aicen_init,    &
                                   aicen,      trcrn)
+            if (icepack_warnings_aborted(subname)) return
+         endif
 
-         if (icepack_warnings_aborted(subname)) return     
- 
          if (vicen(n) > puny) then
             if (tr_iage) &
                trcrn(nt_iage,n) = (trcrn(nt_iage,n)*vice1 + dt*vin0new(n))/vicen(n)
@@ -1843,15 +1736,15 @@
                enddo
             endif
 
-           frazil_conc = c0
            if (tr_iso) then
               do it=1,n_iso
-               if (it==1)   &
-                  frazil_conc = isoice_alpha(c0,'HDO'   ,isotope_frac_method)*HDO_ocn
-               if (it==2)   &
-                  frazil_conc = isoice_alpha(c0,'H2_16O',isotope_frac_method)*H2_16O_ocn
-               if (it==3)   &
-                  frazil_conc = isoice_alpha(c0,'H2_18O',isotope_frac_method)*H2_18O_ocn
+                frazil_conc = c0
+                if (it==1) &
+                   frazil_conc = isoice_alpha(c0,'HDO'   ,isotope_frac_method)*HDO_ocn
+                if (it==2) &
+                   frazil_conc = isoice_alpha(c0,'H2_16O',isotope_frac_method)*H2_16O_ocn
+                if (it==3) &
+                   frazil_conc = isoice_alpha(c0,'H2_18O',isotope_frac_method)*H2_18O_ocn
 
                 trcrn(nt_isoice+it-1,1) &
                   = (trcrn(nt_isoice+it-1,1)*vice1) &
@@ -1860,7 +1753,7 @@
                 fiso_ocn(it) = fiso_ocn(it) &
                              - frazil_conc*rhoi*vi0new/dt
               enddo
-           endif
+           endif  ! if iso
 
             if (tr_lvl) then
                 alvl = trcrn(nt_alvl,n)
@@ -1870,7 +1763,7 @@
                (trcrn(nt_vlvl,n)*vice1 + vin0new(n))/vicen(n)
             endif
 
-            if (tr_pond_cesm .or. tr_pond_topo) then
+            if (tr_pond_topo) then
                trcrn(nt_apnd,n) = &
                trcrn(nt_apnd,n)*area1/aicen(n)
             elseif (tr_pond_lvl) then
@@ -1879,7 +1772,7 @@
                   trcrn(nt_apnd,n) * alvl*area1 / (trcrn(nt_alvl,n)*aicen(n))
                endif
             endif
-         endif
+         endif ! vicen > 0
 
          do k = 1, nilyr
             if (vicen(n) > c0) then
@@ -1888,15 +1781,12 @@
                trcrn(nt_qice+k-1,n) = &
               (trcrn(nt_qice+k-1,n)*vice1 + qi0new*vin0new(n))/vicen(n)
                ! salinity
-               if (.NOT. solve_zsal)&
                trcrn(nt_sice+k-1,n) = &
               (trcrn(nt_sice+k-1,n)*vice1 + Sprofile(k)*vin0new(n))/vicen(n)
             endif
-         enddo
-
-      endif ! vi0new > 0
-
-      enddo ! ncats
+         enddo ! nilyr
+      endif ! vin0new > c0
+      enddo ! n
 
       if (conserv_check) then
 
@@ -1927,17 +1817,20 @@
 
       !-----------------------------------------------------------------
       ! Biogeochemistry
-      !-----------------------------------------------------------------     
-      if (tr_brine .or. nbtrcr > 0) &
-         call add_new_ice_bgc(dt,         nblyr,                &
-                              ncat, nilyr, nltrcr, &
-                              bgrid,      cgrid,      igrid,    &
+      !-----------------------------------------------------------------
+      if (tr_brine .or. nbtrcr > 0) then
+         call add_new_ice_bgc(dt,         ncats,                &
                               aicen_init, vicen_init, vi0_init, &
-                              aicen,      vicen,      vsnon1,   &
-                              vi0new,     ntrcr,      trcrn,    &
-                              nbtrcr,     sss,        ocean_bio,&
-                              flux_bio,   hsurp)
+                              aicen,      vicen,      vin0new,  &
+                              trcrn,                            &
+                              ocean_bio,  flux_bio,   hsurp,    &
+                              d_an_tot)
          if (icepack_warnings_aborted(subname)) return
+      endif
+
+      if (tr_fsd) then
+         deallocate(afsdn)
+      endif
 
       end subroutine add_new_ice
 
@@ -1949,9 +1842,7 @@
 ! authors: William H. Lipscomb, LANL
 !          Elizabeth C. Hunke, LANL
 
-      subroutine icepack_step_therm2 (dt, ncat, nltrcr,           &
-                                     nilyr,        nslyr,         &
-                                     hin_max,      nblyr,         &
+      subroutine icepack_step_therm2(dt,           hin_max,       &
                                      aicen,                       &
                                      vicen,        vsnon,         &
                                      aicen_init,   vicen_init,    &
@@ -1962,83 +1853,53 @@
                                      nt_strata,                   &
                                      Tf,           sss,           &
                                      salinz,                      &
-                                     rside,        meltl,         &
-                                     fside,                       &
+                                     rsiden,       meltl,         &
+                                     wlat,                        &
                                      frzmlt,       frazil,        &
                                      frain,        fpond,         &
                                      fresh,        fsalt,         &
                                      fhocn,        update_ocn_f,  &
-                                     bgrid,        cgrid,         &
-                                     igrid,        faero_ocn,     &
+                                     faero_ocn,                   &
                                      first_ice,    fzsal,         &
                                      flux_bio,     ocean_bio,     &
                                      frazil_diag,                 &
                                      frz_onset,    yday,          &
                                      fiso_ocn,     HDO_ocn,       &
                                      H2_16O_ocn,   H2_18O_ocn,    &
-                                     nfsd,         wave_sig_ht,   &
+                                     wave_sig_ht,                 &
                                      wave_spectrum,               &
                                      wavefreq,                    &
                                      dwavefreq,                   &
                                      d_afsd_latg,  d_afsd_newi,   &
-                                     d_afsd_latm,  d_afsd_weld,   &
-                                     floe_rad_c,   floe_binwidth)
+                                     d_afsd_latm,  d_afsd_weld)
 
-      integer (kind=int_kind), intent(in) :: &
-         ncat     , & ! number of thickness categories
-         nfsd     , & ! number of floe size categories
-         nltrcr   , & ! number of zbgc tracers
-         nblyr    , & ! number of bio layers
-         nilyr    , & ! number of ice layers
-         nslyr        ! number of snow layers
+      use icepack_parameters, only: icepack_init_parameters
 
-      logical (kind=log_kind), intent(in) :: &
-         update_ocn_f     ! if true, update fresh water and salt fluxes
+      logical (kind=log_kind), intent(in), optional :: &
+         update_ocn_f ! if true, update fresh water and salt fluxes
 
-      real (kind=dbl_kind), dimension(0:ncat), intent(inout) :: &
+      real (kind=dbl_kind), dimension(0:ncat), intent(in) :: &
          hin_max      ! category boundaries (m)
 
       real (kind=dbl_kind), intent(in) :: &
          dt       , & ! time step
          Tf       , & ! freezing temperature (C)
          sss      , & ! sea surface salinity (ppt)
-         rside    , & ! fraction of ice that melts laterally
-         fside    , & ! lateral heat flux (W/m^2)
-         frzmlt   , & ! freezing/melting potential (W/m^2)
-         wave_sig_ht ! significant height of waves in ice (m)
-
-      real (kind=dbl_kind), dimension(:), intent(in)  :: &
-         wave_spectrum  ! ocean surface wave spectrum E(f) (m^2 s)
-
-      real(kind=dbl_kind), dimension(:), intent(in) :: &
-         wavefreq,              & ! wave frequencies (s^-1)
-         dwavefreq                ! wave frequency bin widths (s^-1)
-
-      real (kind=dbl_kind), dimension (:), intent(in) :: &
-         floe_rad_c     , & ! fsd size bin centre in m (radius)
-         floe_binwidth      ! fsd size bin width in m (radius)
+         frzmlt       ! freezing/melting potential (W/m^2)
 
       integer (kind=int_kind), dimension (:), intent(in) :: &
          trcr_depend, & ! = 0 for aicen tracers, 1 for vicen, 2 for vsnon
          n_trcr_strata  ! number of underlying tracer layers
 
       real (kind=dbl_kind), dimension (:,:), intent(in) :: &
-         trcr_base      ! = 0 or 1 depending on tracer dependency
-                        ! argument 2:  (1) aice, (2) vice, (3) vsno
+         trcr_base    ! = 0 or 1 depending on tracer dependency
+                      ! argument 2:  (1) aice, (2) vice, (3) vsno
 
       integer (kind=int_kind), dimension (:,:), intent(in) :: &
-         nt_strata      ! indices of underlying tracer layers
-
-      real (kind=dbl_kind), dimension (nblyr+2), intent(in) :: &
-         bgrid              ! biology nondimensional vertical grid points
-
-      real (kind=dbl_kind), dimension (nblyr+1), intent(in) :: &
-         igrid              ! biology vertical interface points
- 
-      real (kind=dbl_kind), dimension (nilyr+1), intent(in) :: &
-         cgrid              ! CICE vertical coordinate   
+         nt_strata    ! indices of underlying tracer layers
 
       real (kind=dbl_kind), dimension(:), intent(in) :: &
+         rsiden   , & ! fraction of ice that melts laterally
          salinz   , & ! initial salinity profile
          ocean_bio    ! ocean concentration of biological tracer
 
@@ -2050,10 +1911,15 @@
          fresh    , & ! fresh water flux to ocean (kg/m^2/s)
          fsalt    , & ! salt flux to ocean (kg/m^2/s)
          fhocn    , & ! net heat flux to ocean (W/m^2)
-         fzsal    , & ! salt flux to ocean from zsalinity (kg/m^2/s)
          meltl    , & ! lateral ice melt         (m/step-->cm/day)
          frazil   , & ! frazil ice growth        (m/step-->cm/day)
          frazil_diag  ! frazil ice growth diagnostic (m/step-->cm/day)
+
+      real (kind=dbl_kind), intent(inout), optional :: &
+         fzsal        ! salt flux to ocean from zsalinity (kg/m^2/s) (deprecated)
+
+      real (kind=dbl_kind), intent(in), optional :: &
+         wlat         ! lateral melt rate (m/s)
 
       real (kind=dbl_kind), dimension(:), intent(inout) :: &
          aicen_init,& ! initial concentration of ice
@@ -2066,16 +1932,9 @@
 
       real (kind=dbl_kind), dimension(:,:), intent(inout) :: &
          trcrn        ! tracers
- 
-      logical (kind=log_kind), dimension(:), intent(inout) :: &
-         first_ice      ! true until ice forms
 
-      real (kind=dbl_kind), dimension(:), intent(out) :: &
-                            ! change in floe size distribution (area)
-         d_afsd_latg    , & ! due to fsd lateral growth
-         d_afsd_newi    , & ! new ice formation
-         d_afsd_latm    , & ! lateral melt
-         d_afsd_weld        ! welding
+      logical (kind=log_kind), dimension(:), intent(inout) :: &
+         first_ice    ! true until ice forms
 
       real (kind=dbl_kind), intent(inout), optional :: &
          frz_onset    ! day of year that freezing begins (congel or frazil)
@@ -2084,25 +1943,37 @@
          yday         ! day of year
 
       ! water isotopes
-      real (kind=dbl_kind), dimension(:), optional, intent(inout) :: &
-         fiso_ocn       ! isotope flux to ocean  (kg/m^2/s)
+      real (kind=dbl_kind), dimension(:), intent(inout), optional :: &
+         fiso_ocn     ! isotope flux to ocean  (kg/m^2/s)
 
-      real (kind=dbl_kind), optional, intent(in) :: &
+      real (kind=dbl_kind), intent(in), optional :: &
          HDO_ocn    , & ! ocean concentration of HDO (kg/kg)
          H2_16O_ocn , & ! ocean concentration of H2_16O (kg/kg)
          H2_18O_ocn     ! ocean concentration of H2_18O (kg/kg)
+
+      real (kind=dbl_kind), intent(in), optional :: &
+         wave_sig_ht    ! significant height of waves in ice (m)
+
+      real (kind=dbl_kind), dimension(:), intent(in), optional  :: &
+         wave_spectrum  ! ocean surface wave spectrum E(f) (m^2 s)
+
+      real(kind=dbl_kind), dimension(:), intent(in), optional :: &
+         wavefreq, &    ! wave frequencies (s^-1)
+         dwavefreq      ! wave frequency bin widths (s^-1)
+
+      real (kind=dbl_kind), dimension(:), intent(out), optional :: &
+                        ! change in floe size distribution (area)
+         d_afsd_latg, & ! due to fsd lateral growth
+         d_afsd_newi, & ! new ice formation
+         d_afsd_latm, & ! lateral melt
+         d_afsd_weld    ! welding
+
 !autodocument_end
 
       ! local variables
 
-      ! water isotopes
-      real (kind=dbl_kind), dimension(:), allocatable :: &
-         l_fiso_ocn       ! local isotope flux to ocean  (kg/m^2/s)
-
-      real (kind=dbl_kind) :: &
-         l_HDO_ocn    , & ! local ocean concentration of HDO (kg/kg)
-         l_H2_16O_ocn , & ! local ocean concentration of H2_16O (kg/kg)
-         l_H2_18O_ocn     ! local ocean concentration of H2_18O (kg/kg)
+      logical (kind=log_kind), save :: &
+         first_call = .true.   ! first call flag
 
       character(len=*),parameter :: subname='(icepack_step_therm2)'
 
@@ -2110,19 +1981,36 @@
       ! Check optional arguments and set local values
       !-----------------------------------------------------------------
 
-      if (present(fiso_ocn)) then
-         allocate(l_fiso_ocn(size(fiso_ocn)))
-         l_fiso_ocn(:) = fiso_ocn(:)
-      else
-         allocate(l_fiso_ocn(1))
-         l_fiso_ocn(:) = c0
+       if (present(update_ocn_f)) then
+          call icepack_init_parameters(update_ocn_f_in=update_ocn_f)
+       endif
+       if (icepack_chkoptargflag(first_call)) then
+          if (tr_iso) then
+             if (.not.(present(fiso_ocn)   .and. &
+                       present(HDO_ocn)    .and. &
+                       present(H2_16O_ocn) .and. &
+                       present(H2_18O_ocn))) then
+                call icepack_warnings_add(subname//' error in iso arguments, tr_iso=T')
+                call icepack_warnings_setabort(.true.,__FILE__,__LINE__)
+                return
+             endif
+          endif
+          if (tr_fsd) then
+             if (.not.(present(wlat)          .and. &
+                       present(wave_sig_ht)   .and. &
+                       present(wave_spectrum) .and. &
+                       present(wavefreq)      .and. &
+                       present(dwavefreq)     .and. &
+                       present(d_afsd_latg)   .and. &
+                       present(d_afsd_newi)   .and. &
+                       present(d_afsd_latm)   .and. &
+                       present(d_afsd_weld))) then
+                call icepack_warnings_add(subname//' error in FSD arguments, tr_fsd=T')
+                call icepack_warnings_setabort(.true.,__FILE__,__LINE__)
+                return
+             endif
+          endif
       endif
-      l_HDO_ocn = c0
-      l_H2_16O_ocn = c0
-      l_H2_18O_ocn = c0
-      if (present(HDO_ocn)   ) l_HDO_ocn    = HDO_ocn
-      if (present(H2_16O_ocn)) l_H2_16O_ocn = H2_16O_ocn
-      if (present(H2_18O_ocn)) l_H2_18O_ocn = H2_18O_ocn
 
       !-----------------------------------------------------------------
       ! Let rain drain through to the ocean.
@@ -2141,7 +2029,9 @@
       ! Compute fractional ice area in each grid cell.
       !-----------------------------------------------------------------
 
-      call aggregate_area (ncat, aicen, aice, aice0)
+      flux_bio(:) = c0
+
+      call aggregate_area (aicen, aice, aice0)
       if (icepack_warnings_aborted(subname)) return
 
       if (kitd == 1) then
@@ -2152,21 +2042,20 @@
 
          if (aice > puny) then
 
-            call linear_itd (ncat,     hin_max,        &
-                             nilyr,    nslyr,          &
-                             ntrcr,    trcr_depend,    &
-                             trcr_base,        & 
+            call linear_itd (hin_max,        &
+                             trcr_depend,    &
+                             trcr_base,        &
                              n_trcr_strata,   &
                              nt_strata,                &
                              aicen_init,            &
                              vicen_init,            &
                              aicen,                 &
-                             trcrn,           & 
+                             trcrn,           &
                              vicen,                 &
                              vsnon,                 &
                              aice      ,         &
                              aice0     ,         &
-                             fpond       )
+                             fpond, Tf       )
             if (icepack_warnings_aborted(subname)) return
 
          endif ! aice > puny
@@ -2181,32 +2070,26 @@
 
       ! identify ice-ocean cells
 
-         call add_new_ice (ncat,          nilyr,        &
-                           nfsd,          nblyr,        &
-                           n_aero,        dt,           &
-                           ntrcr,         nltrcr,       &
+         call add_new_ice (dt,                          &
                            hin_max,       ktherm,       &
                            aicen,         trcrn,        &
-                           vicen,         vsnon(1),     &
+                           vicen,                       &
                            aice0,         aice,         &
                            frzmlt,        frazil,       &
                            frz_onset,     yday,         &
-                           update_ocn_f,                &
                            fresh,         fsalt,        &
                            Tf,            sss,          &
                            salinz,        phi_init,     &
-                           dSin0_frazil,  bgrid,        &
-                           cgrid,         igrid,        &
-                           nbtrcr,        flux_bio,     &
-                           ocean_bio,     fzsal,        &
-                           frazil_diag,   l_fiso_ocn,   &
-                           l_HDO_ocn,     l_H2_16O_ocn, &
-                           l_H2_18O_ocn,                &
+                           dSin0_frazil,                &
+                           flux_bio,                    &
+                           ocean_bio,                   &
+                           frazil_diag,   fiso_ocn,     &
+                           HDO_ocn,       H2_16O_ocn,   &
+                           H2_18O_ocn,                  &
                            wave_sig_ht,                 &
                            wave_spectrum,               &
                            wavefreq,      dwavefreq,    &
-                           d_afsd_latg,   d_afsd_newi,  &
-                           floe_rad_c, floe_binwidth)
+                           d_afsd_latg,   d_afsd_newi)
 
          if (icepack_warnings_aborted(subname)) return
 
@@ -2214,37 +2097,32 @@
       ! Melt ice laterally.
       !-----------------------------------------------------------------
 
-      call lateral_melt (dt,        ncat,          &
-                         nilyr,     nslyr,         &
-                         n_aero,    fpond,         &
+      call lateral_melt (dt,        fpond,         &
                          fresh,     fsalt,         &
                          fhocn,     faero_ocn,     &
-                         l_fiso_ocn,               &
-                         rside,     meltl,         &
-                         fside,     sss,           &
+                         fiso_ocn,                 &
+                         rsiden,    meltl,         &
+                         wlat,                     &
                          aicen,     vicen,         &
                          vsnon,     trcrn,         &
-                         fzsal,     flux_bio,      &
-                         nbtrcr,    nblyr,         &
-                         nfsd,      d_afsd_latm,   &
-                         floe_rad_c,floe_binwidth)
+                         flux_bio,                 &
+                         d_afsd_latm)
       if (icepack_warnings_aborted(subname)) return
 
       ! Floe welding during freezing conditions
-      if (tr_fsd) &
-      call fsd_weld_thermo (ncat,  nfsd,   &
-                            dt,    frzmlt, &
-                            aicen, trcrn,  &
-                            d_afsd_weld)
-      if (icepack_warnings_aborted(subname)) return
+      if (tr_fsd) then
+         call fsd_weld_thermo (dt,    frzmlt, &
+                               aicen, trcrn,  &
+                               d_afsd_weld)
+         if (icepack_warnings_aborted(subname)) return
+      endif
 
       !-----------------------------------------------------------------
       ! For the special case of a single category, adjust the area and
       ! volume (assuming that half the volume change decreases the
-      ! thickness, and the other half decreases the area).  
+      ! thickness, and the other half decreases the area).
       !-----------------------------------------------------------------
 
-!echmod: test this
       if (ncat==1) &
          call reduce_area (hin_max   (0),                &
                            aicen     (1), vicen     (1), &
@@ -2256,29 +2134,22 @@
       !  categories with very small areas.
       !-----------------------------------------------------------------
 
-      call cleanup_itd (dt,                   ntrcr,            &
-                        nilyr,                nslyr,            &
-                        ncat,                 hin_max,          &
+      call cleanup_itd (dt,                   hin_max,          &
                         aicen,                trcrn(1:ntrcr,:), &
                         vicen,                vsnon,            &
-                        aice0,                aice,             & 
-                        n_aero,                                 &
-                        nbtrcr,               nblyr,            &
+                        aice0,                aice,             &
                         tr_aero,                                &
-                        tr_pond_topo,         heat_capacity,    &
+                        tr_pond_topo,                           &
                         first_ice,                              &
                         trcr_depend,          trcr_base,        &
                         n_trcr_strata,        nt_strata,        &
                         fpond,                fresh,            &
                         fsalt,                fhocn,            &
-                        faero_ocn,            l_fiso_ocn,       &
-                        fzsal,                flux_bio)   
+                        faero_ocn,            fiso_ocn,         &
+                        flux_bio,             Tf                )
       if (icepack_warnings_aborted(subname)) return
 
-      if (present(fiso_ocn)) then
-         fiso_ocn(:) = l_fiso_ocn(:)
-      endif
-      deallocate(l_fiso_ocn)
+      first_call = .false.
 
       end subroutine icepack_step_therm2
 

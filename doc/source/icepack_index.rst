@@ -5,12 +5,14 @@
 Index of primary variables and parameters 
 ==========================================
 
-This index defines many of the symbols used frequently in the ice model
+This index defines many (but not all) of the symbols used frequently in the ice model
 code. Values appearing in this list are fixed or recommended; most
-namelist parameters are indicated ( :math:`E_\circ`) with their default
-values. For other namelist options, see Section :ref:`tabnamelist`. All
-quantities in the code are expressed in MKS units (temperatures may take
-either Celsius or Kelvin units).  
+namelist parameters are indicated ( :math:`\bullet`) with their default
+values. All quantities in the code are expressed in MKS units (temperatures may take
+either Celsius or Kelvin units).  Deprecated parameters are listed at the end.
+
+Namelist variables are partly included here, but they are fully documented in 
+section :ref:`tabnamelist`. 
 
 .. csv-table:: *Alphabetical Index of Icepack Variables and Parameters*
    :header: " ", " ", " "
@@ -47,6 +49,7 @@ either Celsius or Kelvin units).
    "apondn", "area concentration of melt ponds", ""
    "araftn", "area fraction of rafted ice", ""
    "ardgn", "fractional area of ridged ice", ""
+   "argcheck", "optional argument setting", "first"
    "aspect_rapid_mode", ":math:`\bullet` brine convection aspect ratio", "1"
    "astar", "e-folding scale for participation function", "0.05"
    "atmiter_conv", ":math:`\bullet` convergence criteria for ustar", "0.0"
@@ -91,6 +94,7 @@ either Celsius or Kelvin units).
    "cp_wv", "specific heat of water vapor", "1.81x\ :math:`10^3` J/kg/K"
    "cp063", "diffuse fresnel reflectivity (above)", "0.063"
    "cp455", "diffuse fresnel reflectivity (below)", "0.455"
+   "cpl_frazil", ":math:`\bullet` type of frazil ice coupling", ""
    "Cs", "fraction of shear energy contributing to ridging", "0.25"
    "Cstar", "constant in Hibler ice strength formula", "20."
    "**D**", "", ""
@@ -119,7 +123,7 @@ either Celsius or Kelvin units).
    "divu_adv", "divergence associated with advection", "1/s"
    "dms", "dimethyl sulfide concentration", "mmol/m\ :math:`^3`"
    "dmsp", "dimethyl sulfoniopropionate concentration", "mmol/m\ :math:`^3`"
-   "dpscale", ":math:`\bullet` time scale for flushing in permeable ice", ":math:`1\times 10^{-3}`"
+   "dpscale", ":math:`\bullet` scaling factor for flushing in permeable ice (ktherm=1)", ":math:`1\times 10^{-3}`"
    "dragio", "drag coefficient for water on ice", "0.00536"
    "dSdt_slow_mode", ":math:`\bullet` drainage strength parameter", ""
    "dsnow", "change in snow thickness", "m"
@@ -202,15 +206,14 @@ either Celsius or Kelvin units).
    "H2_16O_ocn", "concentration of H2_16O isotope in ocean", "kg/kg"
    "H2_18O_ocn", "concentration of H2_18O isotope in ocean", "kg/kg"
    "HDO_ocn", "concentration of HDO isotope in ocean", "kg/kg"
-   "heat_capacity", ":math:`\bullet` if true, use salinity-dependent thermodynamics", "T"
    "hfrazilmin", "minimum thickness of new frazil ice", "0.05 m"
-   "hi_min", "minimum ice thickness for thinnest ice category", "0.01 m"
+   "hi_min", "minimum ice thickness for thinnest ice category", "m"
    "hi_ssl", "ice surface scattering layer thickness", "0.05 m"
    "hicen", "ice thickness in category n", "m"
    "highfreq", ":math:`\bullet` high-frequency atmo coupling", "F"
    "hin_old", "ice thickness prior to growth/melt", "m"
    "hin_max", "category thickness limits", "m"
-   "history_cdf", "flag to turn on netcdf history output", "F"
+   "history_format", "turns on netcdf history output if set to 'nc'", ""
    "hmix", "ocean mixed layer depth", "20. m"
    "hour", "hour of the year", ""
    "hp0", "pond depth at which shortwave transition to bare ice occurs", "0.2 m"
@@ -218,12 +221,13 @@ either Celsius or Kelvin units).
    "hpmin", "minimum melt pond depth (shortwave)", "0.005 m"
    "hpondn", "melt pond depth", "m"
    "hs_min", "minimum thickness for which :math:`T_s` is computed", "1.\ :math:`\times`\ 10\ :math:`^{-4}` m"
-   "hs0", ":math:`\bullet` snow depth at which transition to ice occurs (dEdd)", "0.03 m"
+   "hs0", ":math:`\bullet` snow depth at which transition to ice occurs (dEdd)", ""
    "hs1", ":math:`\bullet` snow depth of transition to pond ice", "0.03 m"
    "hs_ssl", "snow surface scattering layer thickness", "0.04 m"
    "Hstar", "determines mean thickness of ridged ice", "25. m"
    "**I**", "", ""
    "i0vis","fraction of penetrating visible solar radiation", "0.70"
+   "lateral_flux_type", ":math:`\bullet` laterally flux ice or open water into grid cell when closing", ""
    "ice_ic", ":math:`\bullet` choice of initial conditions", ""
    "ice_stdout", "unit number for standard output", ""
    "ice_stderr", "unit number for standard error output", ""
@@ -245,15 +249,14 @@ either Celsius or Kelvin units).
    "kappav", "visible extinction coefficient in ice, wavelength\ :math:`<`\ 700nm", "1.4 m\ :math:`^{-1}`"
    "kcatbound", ":math:`\bullet` category boundary formula", ""
    "kg_to_g", "kg to g conversion factor", "1000."
-   "kice", "thermal conductivity of fresh ice (:cite:`Bitz99`)", "2.03 W/m/deg"
+   "kice", "thermal conductivity of fresh ice with BL99+MU71 (:cite:`Bitz99`)", "2.03 W/m/deg"
    "kitd", ":math:`\bullet` type of itd conversions (0 = delta function, 1 = linear remap)", "1"
    "krdg_partic", ":math:`\bullet` ridging participation function", "1"
    "krdg_redist", ":math:`\bullet` ridging redistribution function", "1"
    "krdgn", "mean ridge thickness per thickness of ridging ice", ""
-   "kseaice", "thermal conductivity of ice for zero-layer thermodynamics", "2.0 W/m/deg"
    "ksno", "thermal conductivity of snow", "0.30 W/m/deg"
    "kstrength", ":math:`\bullet` ice stength formulation (1= :cite:`Rothrock75`, 0 = :cite:`Hibler79`)", "1"
-   "ktherm", ":math:`\bullet` thermodynamic formulation (0 = zero-layer, 1 = :cite:`Bitz99`, 2 = mushy)", ""        
+   "ktherm", ":math:`\bullet` thermodynamic formulation (-1 none, 1 = :cite:`Bitz99`, 2 = mushy)", ""
    "**L**", "", ""
    "l_brine", "flag for brine pocket effects", ""
    "l_mpond_fresh", ":math:`\bullet` if true, retain (topo) pond water until ponds drain", ""
@@ -384,6 +387,7 @@ either Celsius or Kelvin units).
    "restart_bgc", ":math:`\bullet` if true, read bgc restart file", ""
    "restart_dir", ":math:`\bullet` path to restart/dump files", ""
    "restart_file", ":math:`\bullet` restart file prefix", ""
+   "restart_format", "history files are read/written in binary or netcdf format if set to 'bin' or 'nc' respectively", "bin"
    "restart_[tracer]", ":math:`\bullet` if true, read tracer restart file", ""
    "restore_bgc", ":math:`\bullet` if true, restore nitrate/silicate to data", ""
    "restore_ice", ":math:`\bullet` if true, restore ice state along lateral boundaries", ""
@@ -404,6 +408,7 @@ either Celsius or Kelvin units).
    "rsnw_sig", "standard deviation of snow grain radius", "250. :math:`\times` 10\ :math:`^{-6}` m"
    "**S**", "", ""
    "salinz", "ice salinity profile", "ppt"
+   "saltflux_option", "constant or prognostic salinity fluxes","constant"
    "saltmax", "max salinity, at ice base (:cite:`Bitz99`)", "3.2 ppt"
    "scale_factor", "scaling factor for shortwave radiation components", ""
    "sec", "seconds elasped into idate", ""
@@ -411,7 +416,7 @@ either Celsius or Kelvin units).
    "shcoef", "transfer coefficient for sensible heat", ""
    "shear", "strain rate II component", "1/s"
    "shlat", "southern latitude of artificial mask edge", "30\ :math:`^\circ`\ N"
-   "shortwave", ":math:`\bullet` flag for shortwave parameterization ('default' or 'dEdd')", ""
+   "shortwave", ":math:`\bullet` flag for shortwave parameterization ('ccsm3' or 'dEdd')", ""
    "sil", "silicate concentration", "mmol/m\ :math:`^3`"
    "sk_l", "skeletal layer thickness", "0.03 m"
    "snowage_drdt0", "snowage table 3D data for drdt0 (10^-6 m/hr)", ""
@@ -442,8 +447,8 @@ either Celsius or Kelvin units).
    "strocnx(y)", "ice–ocean stress in the x(y)-direction (U-cell)", "N/m\ :math:`^2`"
    "strocnx(y)T", "ice–ocean stress, x(y)-dir. (T-cell)", "N/m\ :math:`^2`"
    "strtltx(y)", "surface stress due to sea surface slope", "N/m\ :math:`^2`"
-   "swndf", "incoming shortwave radiation, near IR, diffuse", "W/m\ :math:`^2`"
-   "swndr", "incoming shortwave radiation, near IR, direct", "W/m\ :math:`^2`"
+   "swidf", "incoming shortwave radiation, near IR, diffuse", "W/m\ :math:`^2`"
+   "swidr", "incoming shortwave radiation, near IR, direct", "W/m\ :math:`^2`"
    "swvdf", "incoming shortwave radiation, visible, diffuse", "W/m\ :math:`^2`"
    "swvdr", "incoming shortwave radiation, visible, direct", "W/m\ :math:`^2`"
    "sw_redist", "option to redistribute shortwave", ".false."
@@ -460,13 +465,15 @@ either Celsius or Kelvin units).
    "time", "total elapsed time", "s"
    "time_forc", "time of last forcing update", "s"
    "Timelt", "melting temperature of ice top surface", "0. C"
+   "tscale_pnd_drain", "mushy pond macroscopic drainage timescale", "10 days"
    "TLAT", "latitude of cell center", "radians"
+   "Tliquidus_max", "maximum liquidus temperature of mush", "0. C"
    "TLON", "longitude of cell center", "radians"
    "tmask", "land/boundary mask, thickness (T-cell)", ""
    "tmass", "total mass of ice and snow", "kg/m\ :math:`^2`"
    "Tmin", "minimum allowed internal temperature", "-100. C"
    "Tmltz", "melting temperature profile of ice", ""
-   "Tocnfrz", "temperature of constant freezing point parameterization", "-1.8 C"
+   "Tocnfrz", "temperature of constant freezing point parameterization", "C"
    "tr_aero", ":math:`\bullet` if true, use aerosol tracers", ""
    "tr_iso", ":math:`\bullet` if true, use water isotope tracers", ""
    "tr_bgc_[tracer]", ":math:`\bullet` if true, use biogeochemistry tracers", ""
@@ -474,7 +481,6 @@ either Celsius or Kelvin units).
    "tr_FY", ":math:`\bullet` if true, use first-year area tracer", ""
    "tr_iage", ":math:`\bullet` if true, use ice age tracer", ""
    "tr_lvl", ":math:`\bullet` if true, use level ice area and volume tracers", ""
-   "tr_pond_cesm", ":math:`\bullet` if true, use CESM melt pond scheme", ""
    "tr_pond_lvl", ":math:`\bullet` if true, use level-ice melt pond scheme", ""
    "tr_pond_topo", ":math:`\bullet` if true, use topo melt pond scheme", ""
    "trcr", "ice tracers", ""
@@ -524,3 +530,13 @@ either Celsius or Kelvin units).
    "zref", "reference height for stability", "10. m"
    "zTrf", "reference height for :math:`T_{ref}`, :math:`Q_{ref}`, :math:`U_{ref}`", "2. m"
    "zvir", "gas constant (water vapor)/gas constant (air) - 1", "0.606"
+   "**Deprecated options and parameters**", "", ""
+   "heat_capacity", "if true, use salinity-dependent thermodynamics", "T"
+   "kseaice", "thermal conductivity of ice for zero-layer thermodynamics", "2.0 W/m/deg"
+   "ktherm", "thermodynamic formulation (0 = zero-layer, 1 = :cite:`Bitz99`, 2 = mushy)", ""
+   "tr_pond_cesm", "if true, use CESM melt pond scheme", ""
+
+.. 
+   new deprecation comments
+
+

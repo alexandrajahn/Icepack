@@ -1,21 +1,21 @@
 !=======================================================================
-! Copyright (c) 2022, Triad National Security, LLC
+! Copyright (c) 2024, Triad National Security, LLC
 ! All rights reserved.
-!                
-! Copyright 2022. Triad National Security, LLC. This software was
-! produced under U.S. Government contract DE-AC52-06NA25396 for Los 
+!
+! Copyright 2024. Triad National Security, LLC. This software was
+! produced under U.S. Government contract DE-AC52-06NA25396 for Los
 ! Alamos National Laboratory (LANL), which is operated by Triad
-! National Security, LLC for the U.S. Department of Energy. The U.S.  
-! Government has rights to use, reproduce, and distribute this software.  
-! NEITHER THE GOVERNMENT NOR TRIAD NATIONAL SECURITY, LLC MAKES ANY  
+! National Security, LLC for the U.S. Department of Energy. The U.S.
+! Government has rights to use, reproduce, and distribute this software.
+! NEITHER THE GOVERNMENT NOR TRIAD NATIONAL SECURITY, LLC MAKES ANY
 ! WARRANTY, EXPRESS OR IMPLIED, OR ASSUMES ANY LIABILITY FOR THE USE OF
-! THIS SOFTWARE. If software is modified to produce derivative works, 
-! such modified software should be clearly marked, so as not to confuse 
+! THIS SOFTWARE. If software is modified to produce derivative works,
+! such modified software should be clearly marked, so as not to confuse
 ! it with the version available from LANL.
 !
 ! The full license and distribution policy are available from
 ! https://github.com/CICE-Consortium
-! 
+!
 !=======================================================================
 !
 ! authors: Elizabeth C. Hunke, LANL
@@ -45,13 +45,15 @@
       use icepack_tracers,    only: icepack_max_iso    => max_iso
       use icepack_tracers,    only: icepack_nmodal1    => nmodal1
       use icepack_tracers,    only: icepack_nmodal2    => nmodal2
-      use icepack_parameters, only: icepack_nspint     => nspint
+
+      use icepack_shortwave_data, only: icepack_nspint_3bd => nspint_3bd
+      use icepack_shortwave_data, only: icepack_nspint_5bd => nspint_5bd
 
       use icepack_parameters, only: icepack_init_parameters
       use icepack_parameters, only: icepack_query_parameters
       use icepack_parameters, only: icepack_write_parameters
       use icepack_parameters, only: icepack_recompute_constants
-      use icepack_parameters, only: nspint, secday, spval_const
+      use icepack_parameters, only: secday, spval_const
       use icepack_parameters, only: c0, c1, c1p5, c2, c3, c4, c5, c6, c8
       use icepack_parameters, only: c10, c15, c16, c20, c25, c100, c1000
       use icepack_parameters, only: p001, p01, p1, p2, p4, p5, p6, p05
@@ -82,13 +84,15 @@
       use icepack_wavefracspec, only: icepack_init_wave
       use icepack_wavefracspec, only: icepack_step_wavefracture
 
+      use icepack_snow, only: icepack_init_snow
       use icepack_snow, only: icepack_step_snow
 
+      use icepack_shortwave, only: icepack_init_radiation
       use icepack_shortwave, only: icepack_prep_radiation
       use icepack_shortwave, only: icepack_step_radiation
 
       use icepack_brine, only: icepack_init_hbrine
-      use icepack_brine, only: icepack_init_zsalinity
+      use icepack_brine, only: icepack_init_zsalinity    ! deprecated
 
       use icepack_zbgc , only: icepack_init_bgc
       use icepack_zbgc , only: icepack_init_zbgc
@@ -108,26 +112,30 @@
       use icepack_therm_shared  , only: icepack_snow_temperature
       use icepack_therm_shared  , only: icepack_liquidus_temperature
       use icepack_therm_shared  , only: icepack_sea_freezing_temperature
-      use icepack_therm_shared  , only: icepack_enthalpy_snow
-      use icepack_therm_shared  , only: icepack_init_thermo
-      use icepack_therm_shared  , only: icepack_init_trcr
+      use icepack_therm_shared  , only: icepack_init_salinity
+      use icepack_therm_shared  , only: icepack_salinity_profile
+      use icepack_therm_shared  , only: icepack_init_enthalpy
+      ! for backwards compatibilty, remove in the future
+      use icepack_therm_shared  , only: icepack_init_thermo => icepack_init_salinity
+      use icepack_therm_shared  , only: icepack_init_trcr => icepack_init_enthalpy
 
+      use icepack_mushy_physics , only: icepack_enthalpy_snow
+      use icepack_mushy_physics , only: icepack_enthalpy_mush
       use icepack_mushy_physics , only: icepack_mushy_density_brine
       use icepack_mushy_physics , only: icepack_mushy_liquid_fraction
       use icepack_mushy_physics , only: icepack_mushy_temperature_mush
-
-      use icepack_snow, only: icepack_init_snow
 
       use icepack_warnings, only: icepack_warnings_clear
       use icepack_warnings, only: icepack_warnings_print
       use icepack_warnings, only: icepack_warnings_flush
       use icepack_warnings, only: icepack_warnings_aborted
+      use icepack_warnings, only: icepack_warnings_getall
 
 !autodocument_end icepack_intfc.F90
 
       implicit none
 
-      public 
+      public
 
       public :: icepack_configure
 
